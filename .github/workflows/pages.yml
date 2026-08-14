@@ -39,6 +39,9 @@ jobs:
       - name: Build the Pages export
         run: npm run build:pages
 
+      - name: Test the Pages export
+        run: node --test tests/pages-export.test.mjs
+
       - name: Upload the Pages artifact
         uses: actions/upload-pages-artifact@v3
         with:

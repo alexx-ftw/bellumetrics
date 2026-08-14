@@ -34,6 +34,19 @@ test("exports the required GitHub Pages routes with base-path assets and links",
   const home = pages.find(({ route }) => route === "index.html");
   assert.match(home.html, /href="\/commander-elo\/network\/"/);
   assert.match(home.html, /href="\/commander-elo\/rankings\/"/);
+  assert.match(
+    home.html,
+    /rel="(?:shortcut icon|icon)" href="\/commander-elo\/favicon\.svg"/,
+    "the homepage favicon should use the Pages base path",
+  );
+
+  for (const { route, html } of pages) {
+    assert.doesNotMatch(
+      html,
+      /(?:src|href)="\/(?!commander-elo(?:\/|"))/,
+      `${route} should not include a root-relative resource URL outside /commander-elo`,
+    );
+  }
 });
 
 test("configures the GitHub Pages deployment workflow", async () => {
@@ -58,6 +71,11 @@ test("configures the GitHub Pages deployment workflow", async () => {
     "workflow should deploy the Pages artifact",
   );
   assert.match(workflow, /path:\s*\.\/out\b/, "workflow should upload ./out");
+  assert.match(
+    workflow,
+    /- name: Build the Pages export\s+run: npm run build:pages\s+- name: Test the Pages export\s+run: node --test tests\/pages-export\.test\.mjs\s+- name: Upload the Pages artifact/s,
+    "workflow should test the export immediately after building and before upload",
+  );
 });
 
 test("keeps hero decoration inside the Pages viewport", async () => {

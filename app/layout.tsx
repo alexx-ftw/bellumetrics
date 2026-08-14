@@ -8,6 +8,10 @@ const geistSans = Geist({
   subsets: ["latin"],
 });
 
+const faviconPath = process.env.GITHUB_PAGES === "1"
+  ? "/commander-elo/favicon.svg"
+  : "/favicon.svg";
+
 export const metadata: Metadata = {
   title: "Commander Elo",
   description: "Ranking experimental y red de conexiones entre comandantes históricos.",
@@ -15,8 +19,8 @@ export const metadata: Metadata = {
     "codex-preview": "development",
   },
   icons: {
-    icon: "/favicon.svg",
-    shortcut: "/favicon.svg",
+    icon: faviconPath,
+    shortcut: faviconPath,
   },
 };
 
