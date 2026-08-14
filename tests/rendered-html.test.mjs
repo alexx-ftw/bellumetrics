@@ -47,3 +47,34 @@ test("homepage communicates the ranking and connection product", async () => {
   assert.match(html, /Grados de separación/i);
   assert.match(html, /datos de demostración/i);
 });
+
+test("ranking page explains the four provisional ratings", async () => {
+  const { response, html } = await render("/rankings");
+  assert.equal(response.status, 200);
+  assert.match(html, /Ranking de comandantes/i);
+  assert.match(html, /Histórico/i);
+  assert.match(html, /Ajustado/i);
+});
+
+test("network page exposes the degrees of separation explorer", async () => {
+  const { response, html } = await render("/network");
+  assert.equal(response.status, 200);
+  assert.match(html, /Explorador de conexiones/i);
+  assert.match(html, /Buscar conexión/i);
+});
+
+test("methodology page makes the prototype limitations explicit", async () => {
+  const { response, html } = await render("/methodology");
+  assert.equal(response.status, 200);
+  assert.match(html, /Metodología/i);
+  assert.match(html, /provisional/i);
+  assert.match(html, /incertidumbre/i);
+});
+
+test("commander profile combines ratings and documented encounters", async () => {
+  const { response, html } = await render("/commander/napoleon-bonaparte");
+  assert.equal(response.status, 200);
+  assert.match(html, /Napoleón Bonaparte/i);
+  assert.match(html, /Waterloo/i);
+  assert.match(html, /Confianza de los datos/i);
+});
