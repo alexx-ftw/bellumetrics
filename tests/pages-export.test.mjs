@@ -21,8 +21,13 @@ test("exports the required GitHub Pages routes with base-path assets and links",
     assert.ok(html.length > 0, `${route} should contain HTML`);
     assert.match(
       html,
-      /(?:src|href)="\/commander-elo\//,
-      `${route} should reference a /commander-elo/ asset or link`,
+      /(?:src|href)="\/commander-elo\/_next\//,
+      `${route} should reference a /commander-elo/_next/ asset`,
+    );
+    assert.match(
+      html,
+      /href="\/commander-elo\/(?!_next\/)[^"]+"/,
+      `${route} should include a /commander-elo/ route link`,
     );
   }
 

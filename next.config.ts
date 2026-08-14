@@ -9,9 +9,6 @@ const nextConfig: NextConfig = process.env.GITHUB_PAGES === "1"
       images: {
         unoptimized: true,
       },
-      typescript: {
-        ignoreBuildErrors: true,
-      },
     }
   : {};
 
