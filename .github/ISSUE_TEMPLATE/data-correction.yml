@@ -1,0 +1,49 @@
+name: Corrección de datos históricos
+description: Propón una corrección documentada para un comandante, batalla o fuente de Commander Elo.
+title: "[Datos]: "
+labels:
+  - datos
+  - revisión de fuentes
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Los datos actuales son provisionales y de demostración. Aporta evidencia verificable: las puntuaciones no se editan manualmente; la evidencia aceptada provoca un recálculo del Elo.
+  - type: input
+    id: affected-record
+    attributes:
+      label: Comandante o batalla afectados
+      description: Indica el nombre y, si lo conoces, el identificador de `lib/commanders.mjs`.
+      placeholder: "Ej.: Napoleón Bonaparte (napoleon-bonaparte) / Waterloo"
+    validations:
+      required: true
+  - type: textarea
+    id: proposed-correction
+    attributes:
+      label: Corrección propuesta
+      description: Explica el dato actual y el dato que propones sustituir, añadir o retirar.
+      placeholder: "Actual: …\nPropuesto: …"
+    validations:
+      required: true
+  - type: textarea
+    id: source
+    attributes:
+      label: Fuente o referencia bibliográfica
+      description: Incluye una URL estable o una referencia bibliográfica completa con página o sección cuando sea posible.
+      placeholder: "URL: https://…\nO autor, título, editorial/publicación, año, página/sección"
+    validations:
+      required: true
+  - type: textarea
+    id: rationale
+    attributes:
+      label: Justificación y límites de la evidencia
+      description: Explica por qué la fuente respalda la corrección e identifica desacuerdos o incertidumbres relevantes.
+    validations:
+      required: true
+  - type: checkboxes
+    id: acknowledgement
+    attributes:
+      label: Confirmación
+      options:
+        - label: Entiendo que una fuente aceptada actualiza los datos y desencadena un recálculo, no una edición manual de la puntuación Elo.
+          required: true
