@@ -1,5 +1,5 @@
 import assert from "node:assert/strict";
-import { readFile } from "node:fs/promises";
+import { readFile, readdir } from "node:fs/promises";
 import test from "node:test";
 
 const exportedRoutes = [
@@ -58,4 +58,18 @@ test("configures the GitHub Pages deployment workflow", async () => {
     "workflow should deploy the Pages artifact",
   );
   assert.match(workflow, /path:\s*\.\/out\b/, "workflow should upload ./out");
+});
+
+test("keeps hero decoration inside the Pages viewport", async () => {
+  const cssDirectory = new URL("../out/_next/static/chunks/", import.meta.url);
+  const cssFiles = (await readdir(cssDirectory)).filter((file) => file.endsWith(".css"));
+  const stylesheets = await Promise.all(
+    cssFiles.map((file) => readFile(new URL(file, cssDirectory), "utf8")),
+  );
+
+  assert.match(
+    stylesheets.join("\n"),
+    /\.hero\{[^}]*\boverflow:clip\b/,
+    "the hero must clip its outward-positioned decorative pseudo-elements",
+  );
 });
