@@ -21,30 +21,30 @@ test("exports the required GitHub Pages routes with base-path assets and links",
     assert.ok(html.length > 0, `${route} should contain HTML`);
     assert.match(
       html,
-      /(?:src|href)="\/commander-elo\/_next\//,
-      `${route} should reference a /commander-elo/_next/ asset`,
+      /(?:src|href)="\/bellumetrics\/_next\//,
+      `${route} should reference a /bellumetrics/_next/ asset`,
     );
     assert.match(
       html,
-      /href="\/commander-elo\/(?!_next\/)[^"]+"/,
-      `${route} should include a /commander-elo/ route link`,
+      /href="\/bellumetrics\/(?!_next\/)[^"]+"/,
+      `${route} should include a /bellumetrics/ route link`,
     );
   }
 
   const home = pages.find(({ route }) => route === "index.html");
-  assert.match(home.html, /href="\/commander-elo\/network\/"/);
-  assert.match(home.html, /href="\/commander-elo\/rankings\/"/);
+  assert.match(home.html, /href="\/bellumetrics\/network\/"/);
+  assert.match(home.html, /href="\/bellumetrics\/rankings\/"/);
   assert.match(
     home.html,
-    /rel="(?:shortcut icon|icon)" href="\/commander-elo\/favicon\.svg"/,
+    /rel="(?:shortcut icon|icon)" href="\/bellumetrics\/favicon\.svg"/,
     "the homepage favicon should use the Pages base path",
   );
 
   for (const { route, html } of pages) {
     assert.doesNotMatch(
       html,
-      /(?:src|href)="\/(?!commander-elo(?:\/|"))/,
-      `${route} should not include a root-relative resource URL outside /commander-elo`,
+      /(?:src|href)="\/(?!bellumetrics(?:\/|"))/,
+      `${route} should not include a root-relative resource URL outside /bellumetrics`,
     );
   }
 });

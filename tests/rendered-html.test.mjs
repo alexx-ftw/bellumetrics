@@ -38,9 +38,11 @@ test("renders development preview metadata", async () => {
   assert.match(html, developmentPreviewMeta);
 });
 
-test("homepage communicates the ranking and connection product", async () => {
+test("homepage presents Bellumetrics and its Commander Elo ranking", async () => {
   const { response, html } = await render();
   assert.equal(response.status, 200);
+  assert.match(html, /Bellumetrics/i);
+  assert.match(html, /Military history, measured\./i);
   assert.match(html, /Commander Elo/i);
   assert.match(html, /Mide\. Compara\. Conecta\./i);
   assert.match(html, /Ranking histórico/i);

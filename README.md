@@ -1,6 +1,8 @@
-# Commander Elo
+# Bellumetrics
 
-[Commander Elo](https://alexx-ftw.github.io/commander-elo/) es un prototipo público en español para explorar comparaciones históricas entre comandantes mediante resultados, contexto y redes de enfrentamientos.
+**Military history, measured.**
+
+[Bellumetrics](https://alexx-ftw.github.io/bellumetrics/) es un prototipo público en español para explorar la historia militar mediante datos, fuentes, rankings y redes de enfrentamientos. **Commander Elo** es su ranking principal de comandantes.
 
 > **Datos provisionales:** la muestra, los conteos de fuentes y las puntuaciones actuales son datos de demostración. No son conclusiones históricas ni una clasificación definitiva.
 
@@ -43,4 +45,4 @@ Aceptamos pull requests pequeños y verificables. Antes de abrir un pull request
 
 ## Alcance
 
-Commander Elo es una herramienta comparativa experimental. Conserva la incertidumbre visible, evita convertir estimaciones provisionales en afirmaciones históricas y agradece fuentes que permitan revisar los casos discutibles.
+Bellumetrics es una plataforma histórica experimental. Conserva la incertidumbre visible, evita convertir estimaciones provisionales en afirmaciones históricas y agradece fuentes que permitan revisar los casos discutibles.

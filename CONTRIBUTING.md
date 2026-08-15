@@ -1,4 +1,4 @@
-# Contribuir a Commander Elo
+# Contribuir a Bellumetrics
 
 Gracias por ayudar a mejorar este prototipo histórico. La base actual es provisional: las puntuaciones y los conteos de fuentes son de demostración y deben revisarse con evidencia verificable.
 
