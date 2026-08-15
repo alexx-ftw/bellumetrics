@@ -1,4 +1,4 @@
-name: Deploy Commander Elo to GitHub Pages
+name: Deploy Bellumetrics to GitHub Pages
 
 on:
   push:

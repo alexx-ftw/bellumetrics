@@ -9,12 +9,12 @@ const geistSans = Geist({
 });
 
 const faviconPath = process.env.GITHUB_PAGES === "1"
-  ? "/commander-elo/favicon.svg"
+  ? "/bellumetrics/favicon.svg"
   : "/favicon.svg";
 
 export const metadata: Metadata = {
-  title: "Commander Elo",
-  description: "Ranking experimental y red de conexiones entre comandantes históricos.",
+  title: "Bellumetrics",
+  description: "Military history, measured. Datos, rankings y conexiones entre comandantes históricos.",
   other: {
     "codex-preview": "development",
   },
