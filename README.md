@@ -37,6 +37,24 @@ node --test tests/pages-export.test.mjs
 
 También están disponibles `npm test` y `npm run lint` para las comprobaciones del proyecto.
 
+## Base de datos e importación histórica
+
+La migración inicial de Supabase está en
+[`supabase/migrations/202608150001_wiki_data_foundation.sql`](supabase/migrations/202608150001_wiki_data_foundation.sql).
+Separa las entidades históricas canónicas de las importaciones pendientes de revisión y aplica RLS para que el navegador solo pueda leer contenido publicado.
+
+Después de aplicar la migración en un proyecto Supabase, configura estas variables únicamente en un entorno de servidor seguro:
+
+```bash
+export SUPABASE_URL="https://<project-ref>.supabase.co"
+export SUPABASE_SERVICE_ROLE_KEY="<service-role-key>"
+npm run import:war-atlas
+```
+
+El importador descarga el manifiesto y el catálogo JSON de [The War Atlas](https://thewaratlas.co/data), valida su licencia CC BY 4.0 y guarda los registros en `import_runs` e `import_records`. Es idempotente por versión y nunca publica directamente comandantes, batallas ni resultados. La clave `service_role` no debe exponerse en variables públicas, GitHub Pages ni código del navegador.
+
+La reutilización conserva la atribución requerida: **The War Atlas — thewaratlas.co**.
+
 ## Cómo contribuir
 
 Consulta [CONTRIBUTING.md](CONTRIBUTING.md) para proponer una corrección de datos, añadir un comandante o aportar una fuente. Para una corrección concreta, abre el formulario de [corrección de datos](../../issues/new?template=data-correction.yml) con la fuente y la justificación.
