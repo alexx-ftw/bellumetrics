@@ -25,9 +25,49 @@ insert into contract_tables (table_name, is_staging) values
 
 create temp table contract_privileges (privilege text primary key);
 insert into contract_privileges (privilege) values
-  ('SELECT'), ('INSERT'), ('UPDATE'), ('DELETE'), ('TRUNCATE'), ('REFERENCES'), ('TRIGGER');
+  ('SELECT'), ('INSERT'), ('UPDATE'), ('DELETE'), ('TRUNCATE'),
+  ('REFERENCES'), ('TRIGGER'), ('MAINTAIN');
 
-select plan(10);
+create temp table contract_sequences (
+  sequence_name text primary key,
+  is_staging boolean not null
+);
+insert into contract_sequences (sequence_name, is_staging) values
+  ('commanders_id_seq', false),
+  ('campaigns_id_seq', false),
+  ('engagements_id_seq', false),
+  ('engagement_sides_id_seq', false),
+  ('participations_id_seq', false),
+  ('result_interpretations_id_seq', false),
+  ('sources_id_seq', false),
+  ('claims_id_seq', false),
+  ('import_runs_id_seq', true),
+  ('import_records_id_seq', true);
+
+create temp table contract_sequence_privileges (privilege text primary key);
+insert into contract_sequence_privileges (privilege) values
+  ('USAGE'), ('SELECT'), ('UPDATE');
+
+create temp table contract_policies (
+  table_name text primary key,
+  policy_name text not null unique
+);
+insert into contract_policies (table_name, policy_name) values
+  ('commanders', 'commanders_public_read'),
+  ('campaigns', 'campaigns_public_read'),
+  ('engagements', 'engagements_public_read'),
+  ('engagement_sides', 'engagement_sides_public_read'),
+  ('participations', 'participations_public_read'),
+  ('result_interpretations', 'result_interpretations_public_read'),
+  ('sources', 'sources_public_read'),
+  ('claims', 'claims_public_read'),
+  ('claim_sources', 'claim_sources_public_read'),
+  ('commander_claims', 'commander_claims_public_read'),
+  ('engagement_claims', 'engagement_claims_public_read'),
+  ('participation_claims', 'participation_claims_public_read'),
+  ('result_interpretation_claims', 'result_interpretation_claims_public_read');
+
+select plan(14);
 select ok(
   not exists (select 1 from contract_tables t where to_regclass(format('public.%s', t.table_name)) is null),
   format('all 15 contract tables exist; missing: %s', coalesce((
@@ -120,9 +160,107 @@ select ok(
   ), 'none'))
 );
 select ok(
-  exists (select 1 from pg_policies where schemaname = 'public' and tablename = 'commanders' and policyname = 'commanders_public_read'),
-  'commander read policy exists'
+  not exists (
+    select 1
+    from (values ('anon'), ('authenticated')) as roles(role_name)
+    cross join contract_sequences s
+    cross join contract_sequence_privileges p
+    where has_sequence_privilege(
+      roles.role_name,
+      format('public.%s', s.sequence_name),
+      p.privilege
+    )
+  ),
+  'browser roles have no canonical or staging identity-sequence privileges'
 );
-select ok(exists(select 1 from public.import_runs where status = 'staged'), 'a staged import exists');
+select ok(
+  not exists (
+    select 1
+    from (values ('import_runs'), ('import_records')) as staging(table_name)
+    cross join (values ('SELECT'), ('INSERT'), ('UPDATE')) as required(privilege)
+    where not has_table_privilege(
+      'service_role',
+      format('public.%s', staging.table_name),
+      required.privilege
+    )
+  ),
+  'service_role has the staging table privileges required by the importer'
+);
+select ok(
+  not exists (
+    select 1
+    from contract_sequences s
+    cross join (values ('USAGE'), ('SELECT')) as required(privilege)
+    where s.is_staging
+      and not has_sequence_privilege(
+        'service_role',
+        format('public.%s', s.sequence_name),
+        required.privilege
+      )
+  ),
+  'service_role has explicit staging identity-sequence privileges'
+);
+select ok(
+  not exists (
+    select 1
+    from contract_policies expected
+    where not exists (
+      select 1
+      from pg_policies actual
+      where actual.schemaname = 'public'
+        and actual.tablename = expected.table_name
+        and actual.policyname = expected.policy_name
+        and actual.cmd = 'SELECT'
+    )
+  ),
+  'every canonical table has its expected public read policy'
+);
+select ok(
+  not exists (
+    select 1 from pg_policies
+    where schemaname = 'public' and tablename in ('import_runs', 'import_records')
+  ),
+  'staging tables have no client policies'
+);
+select ok(
+  exists (
+    with current_run as (
+      select id, row_counts
+      from public.import_runs
+      where source_dataset = 'the-war-atlas' and status = 'staged'
+      order by completed_at desc nulls last, id desc
+      limit 1
+    )
+    select 1
+    from current_run r
+    where jsonb_typeof(r.row_counts->'manifest'->'battle') = 'number'
+      and jsonb_typeof(r.row_counts->'actual') = 'object'
+      and (r.row_counts->'manifest'->>'battle')::bigint = (
+        select count(*) from public.import_records records
+        where records.import_run_id = r.id and records.entity_type = 'battle'
+      )
+      and not exists (
+        select 1
+        from jsonb_each(r.row_counts->'actual') stored(entity_type, entity_count)
+        where not case
+          when jsonb_typeof(stored.entity_count) = 'number' then
+            (stored.entity_count #>> '{}')::bigint = (
+              select count(*)
+              from public.import_records records
+              where records.import_run_id = r.id
+                and records.entity_type = stored.entity_type
+            )
+          else false
+        end
+      )
+      and not exists (
+        select 1
+        from public.import_records records
+        where records.import_run_id = r.id
+          and not (r.row_counts->'actual' ? records.entity_type)
+      )
+  ),
+  'current staged The War Atlas run counts match its import records'
+);
 select * from finish();
 rollback;

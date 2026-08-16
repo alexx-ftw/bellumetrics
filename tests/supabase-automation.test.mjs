@@ -2,6 +2,8 @@ import assert from "node:assert/strict";
 import { readFile } from "node:fs/promises";
 import test from "node:test";
 
+import { reportSupabaseSync } from "../.github/scripts/report-supabase-sync.mjs";
+
 const workflowUrl = new URL("../.github/workflows/supabase-sync.yml", import.meta.url);
 const readmeUrl = new URL("../README.md", import.meta.url);
 
@@ -74,22 +76,65 @@ test("scopes Supabase credentials to only the CLI and importer steps that need t
   );
 });
 
-test("deduplicates the incident issue across every open automation issue page", async () => {
+test("workflow delegates incident reporting to the executable helper", async () => {
   const workflow = await readFile(workflowUrl, "utf8");
+  const reportJob = workflow.slice(workflow.indexOf("  report:"));
 
-  assert.match(
-    workflow,
-    /github\.paginate\(\s*github\.rest\.issues\.listForRepo,\s*\{[\s\S]*?state:\s*"open",[\s\S]*?labels:\s*label,[\s\S]*?per_page:\s*100,[\s\S]*?\}\s*\)/,
-  );
+  assert.match(reportJob, /actions\/checkout@v4/);
+  assert.match(reportJob, /\.github\/scripts\/report-supabase-sync\.mjs/);
+  assert.match(reportJob, /reportSupabaseSync\(\{ github, context, syncResult: process\.env\.SYNC_RESULT \}\)/);
 });
 
-test("excludes pull requests when selecting the stable incident issue", async () => {
-  const workflow = await readFile(workflowUrl, "utf8");
+test("comments on recovery before closing the stable incident issue", async () => {
+  const calls = [];
+  const github = {
+    paginate: async (method, options) => {
+      calls.push(["paginate", method, options]);
+      return [
+        { number: 9, title: "Unrelated issue" },
+        { number: 12, title: "Supabase automation failure", pull_request: { url: "pr" } },
+        { number: 42, title: "Supabase automation failure" },
+      ];
+    },
+    rest: {
+      issues: {
+        listForRepo: "listForRepo",
+        createComment: async (options) => calls.push(["createComment", options]),
+        update: async (options) => calls.push(["update", options]),
+      },
+    },
+  };
+  const context = {
+    serverUrl: "https://github.example",
+    runId: 1234,
+    repo: { owner: "bellumetrics", repo: "website" },
+  };
 
-  assert.match(
-    workflow,
-    /issues\.find\(\s*\(candidate\)\s*=>\s*!candidate\.pull_request\s*&&\s*candidate\.title\s*===\s*title\s*,?\s*\)/,
-  );
+  await reportSupabaseSync({ github, context, syncResult: "success" });
+
+  assert.deepEqual(calls.map(([name]) => name), ["paginate", "createComment", "update"]);
+  assert.deepEqual(calls[0].slice(1), [
+    "listForRepo",
+    {
+      owner: "bellumetrics",
+      repo: "website",
+      state: "open",
+      labels: "automation",
+      per_page: 100,
+    },
+  ]);
+  assert.deepEqual(calls[1][1], {
+    owner: "bellumetrics",
+    repo: "website",
+    issue_number: 42,
+    body: "Supabase synchronization recovered in [workflow run 1234](https://github.example/bellumetrics/website/actions/runs/1234).",
+  });
+  assert.deepEqual(calls[2][1], {
+    owner: "bellumetrics",
+    repo: "website",
+    issue_number: 42,
+    state: "closed",
+  });
 });
 
 test("documents Supabase automation setup and staging boundaries", async () => {

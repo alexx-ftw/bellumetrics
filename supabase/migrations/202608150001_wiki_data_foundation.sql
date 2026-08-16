@@ -258,68 +258,141 @@ alter table public.result_interpretation_claims enable row level security;
 alter table public.import_runs enable row level security;
 alter table public.import_records enable row level security;
 
-grant usage on schema public to anon, authenticated;
+grant usage on schema public to anon, authenticated, service_role;
+revoke all privileges on table public.commanders, public.campaigns,
+  public.engagements, public.engagement_sides, public.participations,
+  public.result_interpretations, public.sources, public.claims,
+  public.claim_sources, public.commander_claims, public.engagement_claims,
+  public.participation_claims, public.result_interpretation_claims
+  from anon, authenticated;
+revoke all privileges on sequence public.commanders_id_seq,
+  public.campaigns_id_seq, public.engagements_id_seq,
+  public.engagement_sides_id_seq, public.participations_id_seq,
+  public.result_interpretations_id_seq, public.sources_id_seq,
+  public.claims_id_seq from anon, authenticated;
 grant select on public.commanders, public.campaigns, public.engagements,
   public.engagement_sides, public.participations, public.result_interpretations,
   public.sources, public.claims, public.claim_sources, public.commander_claims,
   public.engagement_claims, public.participation_claims,
   public.result_interpretation_claims to anon, authenticated;
-revoke all on public.import_runs, public.import_records from anon, authenticated;
+revoke all privileges on table public.import_runs, public.import_records
+  from anon, authenticated;
+revoke all privileges on sequence public.import_runs_id_seq,
+  public.import_records_id_seq from anon, authenticated;
+grant select, insert, update on table public.import_runs, public.import_records
+  to service_role;
+grant usage, select on sequence public.import_runs_id_seq,
+  public.import_records_id_seq to service_role;
 
 create policy commanders_public_read on public.commanders for select
   using (publication_status = 'published');
 create policy campaigns_public_read on public.campaigns for select
   using (publication_status = 'published');
 create policy engagements_public_read on public.engagements for select
-  using (publication_status = 'published');
+  using (
+    publication_status = 'published'
+    and (
+      campaign_id is null
+      or exists (
+        select 1 from public.campaigns
+        where campaigns.id = engagements.campaign_id
+          and campaigns.publication_status = 'published'
+      )
+    )
+  );
 create policy engagement_sides_public_read on public.engagement_sides for select
   using (exists (
-    select 1 from public.engagements
+    select 1
+    from public.engagements
+    left join public.campaigns on campaigns.id = engagements.campaign_id
     where engagements.id = engagement_sides.engagement_id
       and engagements.publication_status = 'published'
+      and (engagements.campaign_id is null or campaigns.publication_status = 'published')
   ));
 create policy participations_public_read on public.participations for select
   using (exists (
     select 1
     from public.engagement_sides
     join public.engagements on engagements.id = engagement_sides.engagement_id
+    left join public.campaigns on campaigns.id = engagements.campaign_id
+    join public.commanders on commanders.id = participations.commander_id
     where engagement_sides.id = participations.engagement_side_id
       and engagements.publication_status = 'published'
+      and (engagements.campaign_id is null or campaigns.publication_status = 'published')
+      and commanders.publication_status = 'published'
   ));
 create policy result_interpretations_public_read on public.result_interpretations for select
-  using (publication_status = 'published');
+  using (
+    publication_status = 'published'
+    and exists (
+      select 1
+      from public.engagements
+      left join public.campaigns on campaigns.id = engagements.campaign_id
+      where engagements.id = result_interpretations.engagement_id
+        and engagements.publication_status = 'published'
+        and (engagements.campaign_id is null or campaigns.publication_status = 'published')
+    )
+  );
 create policy sources_public_read on public.sources for select
   using (publication_status = 'published');
 create policy claims_public_read on public.claims for select
   using (publication_status = 'published');
 create policy claim_sources_public_read on public.claim_sources for select
   using (exists (
-    select 1 from public.claims
+    select 1
+    from public.claims
+    join public.sources on sources.id = claim_sources.source_id
     where claims.id = claim_sources.claim_id
       and claims.publication_status = 'published'
+      and sources.publication_status = 'published'
   ));
 create policy commander_claims_public_read on public.commander_claims for select
   using (exists (
-    select 1 from public.claims
+    select 1
+    from public.claims
+    join public.commanders on commanders.id = commander_claims.commander_id
     where claims.id = commander_claims.claim_id
       and claims.publication_status = 'published'
+      and commanders.publication_status = 'published'
   ));
 create policy engagement_claims_public_read on public.engagement_claims for select
   using (exists (
-    select 1 from public.claims
+    select 1
+    from public.claims
+    join public.engagements on engagements.id = engagement_claims.engagement_id
+    left join public.campaigns on campaigns.id = engagements.campaign_id
     where claims.id = engagement_claims.claim_id
       and claims.publication_status = 'published'
+      and engagements.publication_status = 'published'
+      and (engagements.campaign_id is null or campaigns.publication_status = 'published')
   ));
 create policy participation_claims_public_read on public.participation_claims for select
   using (exists (
-    select 1 from public.claims
+    select 1
+    from public.claims
+    join public.participations on participations.id = participation_claims.participation_id
+    join public.engagement_sides on engagement_sides.id = participations.engagement_side_id
+    join public.engagements on engagements.id = engagement_sides.engagement_id
+    left join public.campaigns on campaigns.id = engagements.campaign_id
+    join public.commanders on commanders.id = participations.commander_id
     where claims.id = participation_claims.claim_id
       and claims.publication_status = 'published'
+      and engagements.publication_status = 'published'
+      and (engagements.campaign_id is null or campaigns.publication_status = 'published')
+      and commanders.publication_status = 'published'
   ));
 create policy result_interpretation_claims_public_read
   on public.result_interpretation_claims for select
   using (exists (
-    select 1 from public.claims
+    select 1
+    from public.claims
+    join public.result_interpretations
+      on result_interpretations.id = result_interpretation_claims.result_interpretation_id
+    join public.engagements on engagements.id = result_interpretations.engagement_id
+    left join public.campaigns on campaigns.id = engagements.campaign_id
     where claims.id = result_interpretation_claims.claim_id
       and claims.publication_status = 'published'
+      and result_interpretations.publication_status = 'published'
+      and engagements.publication_status = 'published'
+      and (engagements.campaign_id is null or campaigns.publication_status = 'published')
   ));

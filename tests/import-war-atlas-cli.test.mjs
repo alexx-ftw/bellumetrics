@@ -119,6 +119,10 @@ test("stages an idempotent import in bounded batches", async () => {
     );
     assert.equal(runRequest.body.source_dataset, "the-war-atlas");
     assert.equal(runRequest.body.license_name, "CC BY 4.0");
+    assert.deepEqual(runRequest.body.row_counts, {
+      manifest: { battle: 2 },
+      actual: { battle: 2, commander: 3 },
+    });
 
     const completion = requests.at(-1);
     assert.equal(completion.method, "PATCH");

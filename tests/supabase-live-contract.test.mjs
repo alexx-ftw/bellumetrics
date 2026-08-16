@@ -5,7 +5,7 @@ import test from "node:test";
 test("live contract checks schema, RLS, grants, and staging isolation", async () => {
   const sql = await readFile("supabase/tests/wiki_data_foundation_test.sql", "utf8");
   const executableSql = sql.replace(/--[^\n]*/g, "");
-  assert.match(executableSql, /plan\(10\)/);
+  assert.match(executableSql, /plan\(14\)/);
 
   for (const table of [
     "commanders",
@@ -37,6 +37,7 @@ test("live contract checks schema, RLS, grants, and staging isolation", async ()
     "TRUNCATE",
     "REFERENCES",
     "TRIGGER",
+    "MAINTAIN",
   ]) {
     assert.match(executableSql, new RegExp(`'${privilege}'`));
   }
@@ -44,6 +45,20 @@ test("live contract checks schema, RLS, grants, and staging isolation", async ()
   assert.match(executableSql, /relrowsecurity/);
   assert.match(executableSql, /has_table_privilege/);
   assert.match(executableSql, /not has_table_privilege/);
-  assert.match(executableSql, /commanders_public_read/);
-  assert.match(executableSql, /status = 'staged'/);
+  for (const policy of [
+    "commanders_public_read",
+    "participations_public_read",
+    "claim_sources_public_read",
+    "commander_claims_public_read",
+    "engagement_claims_public_read",
+    "participation_claims_public_read",
+    "result_interpretation_claims_public_read",
+  ]) {
+    assert.match(executableSql, new RegExp(policy));
+  }
+  assert.match(executableSql, /has_sequence_privilege/);
+  assert.match(executableSql, /service_role/);
+  assert.match(executableSql, /source_dataset = 'the-war-atlas'/);
+  assert.match(executableSql, /row_counts->'actual'/);
+  assert.match(executableSql, /import_records/);
 });

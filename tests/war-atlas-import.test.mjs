@@ -68,6 +68,10 @@ test("normalizes battles and deduplicates embedded commanders", () => {
   assert.equal(result.run.sourceVersion, "2026-07-03");
   assert.equal(result.run.licenseName, "CC BY 4.0");
   assert.equal(result.run.attribution, "The War Atlas — thewaratlas.co");
+  assert.deepEqual(result.run.rowCounts, {
+    manifest: { battle: 2 },
+    actual: { battle: 2, commander: 3 },
+  });
   assert.equal(result.records.filter((row) => row.entityType === "battle").length, 2);
   assert.equal(result.records.filter((row) => row.entityType === "commander").length, 3);
   assert.ok(result.records.every((row) => row.checksum.length === 64));
@@ -103,6 +107,32 @@ test("rejects a dataset without the required reusable license", () => {
       battles,
     }),
     /CC BY 4\.0/i,
+  );
+});
+
+test("rejects noncanonical attribution text", () => {
+  assert.throws(
+    () => normalizeWarAtlasDataset({
+      manifest: {
+        ...manifest,
+        license: { ...manifest.license, attribution: "The War Atlas" },
+      },
+      battles,
+    }),
+    /attribution must be The War Atlas — thewaratlas\.co/i,
+  );
+});
+
+test("rejects a manifest battle count that differs from the fetched dataset", () => {
+  assert.throws(
+    () => normalizeWarAtlasDataset({
+      manifest: {
+        ...manifest,
+        files: { "battles.json": { rows: 1 } },
+      },
+      battles,
+    }),
+    /manifest battle count 1 does not match 2 fetched battles/i,
   );
 });
 
