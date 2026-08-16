@@ -37,6 +37,26 @@ node --test tests/pages-export.test.mjs
 
 También están disponibles `npm test` y `npm run lint` para las comprobaciones del proyecto.
 
+## Base de datos e importación histórica
+
+La migración inicial de Supabase está en
+[`supabase/migrations/202608150001_wiki_data_foundation.sql`](supabase/migrations/202608150001_wiki_data_foundation.sql).
+Separa las entidades históricas canónicas de las importaciones pendientes de revisión y aplica RLS para que el navegador solo pueda leer contenido publicado.
+
+Después de aplicar la migración en un proyecto Supabase, configura `SUPABASE_URL` y `SUPABASE_SERVICE_ROLE_KEY` únicamente mediante el gestor de secretos de un entorno de servidor seguro:
+
+```bash
+npm run import:war-atlas
+```
+
+El importador descarga el manifiesto y el catálogo JSON de [The War Atlas](https://thewaratlas.co/data), valida su licencia CC BY 4.0 y guarda los registros en `import_runs` e `import_records`. Es idempotente por versión y nunca publica directamente comandantes, batallas ni resultados. La clave `service_role` no debe exponerse en variables públicas, GitHub Pages ni código del navegador.
+
+La reutilización conserva la atribución requerida: **The War Atlas — thewaratlas.co**.
+
+### Automatización de Supabase
+
+Los mantenedores pueden ejecutar o revisar la automatización en [`.github/workflows/supabase-sync.yml`](.github/workflows/supabase-sync.yml). Se ejecuta los lunes, Monday at 04:00 UTC, y también admite ejecución manual desde la pestaña **Actions** de GitHub. Configura en los secretos del repositorio `SUPABASE_ACCESS_TOKEN`, `SUPABASE_DB_PASSWORD` y `SUPABASE_SERVICE_ROLE_KEY`; nunca los incluyas en el código ni en la documentación. Las importaciones permanecen en staging pending review hasta la revisión humana. Los fallos actualizan una única incidencia estable y esa incidencia se cierra cuando la ejecución se recupera.
+
 ## Cómo contribuir
 
 Consulta [CONTRIBUTING.md](CONTRIBUTING.md) para proponer una corrección de datos, añadir un comandante o aportar una fuente. Para una corrección concreta, abre el formulario de [corrección de datos](../../issues/new?template=data-correction.yml) con la fuente y la justificación.
