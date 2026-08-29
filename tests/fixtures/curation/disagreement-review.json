@@ -1,0 +1,13 @@
+{
+  "action": "reject_battle",
+  "evidence": [
+    {
+      "citation": "Chandler, The Campaigns of Napoleon, p. 1021",
+      "url": "https://example.test/chandler-waterloo"
+    }
+  ],
+  "reason": "The available evidence does not establish the imported outcome.",
+  "dataRevision": "war-atlas-2026-08-24",
+  "promptVersion": "curation-v1",
+  "confidence": 0.99
+}

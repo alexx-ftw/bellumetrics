@@ -37,6 +37,33 @@ node --test tests/pages-export.test.mjs
 
 También están disponibles `npm test` y `npm run lint` para las comprobaciones del proyecto.
 
+## Despliegues
+
+GitHub Pages sigue siendo la publicación pública activa en
+[alexx-ftw.github.io/bellumetrics](https://alexx-ftw.github.io/bellumetrics/).
+La configuración de Vercel está preparada únicamente para un preview configurable;
+todavía no existe una URL de Vercel que deba anunciarse ni se redirige GitHub Pages.
+
+Antes de crear el preview, configura en los entornos de Vercel las siguientes
+variables públicas con los valores del proyecto correspondiente:
+
+| Variable | Uso |
+| --- | --- |
+| `NEXT_PUBLIC_SUPABASE_URL` | URL pública del proyecto Supabase. |
+| `NEXT_PUBLIC_SUPABASE_ANON_KEY` | Clave anónima pública de Supabase. |
+| `NEXT_PUBLIC_SITE_URL` | Origen público de ese despliegue de Vercel. |
+
+El comando de build de Vercel es `npm run build`. No configures allí las
+credenciales del worker de Oracle, `SUPABASE_SERVICE_ROLE_KEY` ni ninguna sesión
+de magic link.
+
+Como acción de aceptación de la Task 12, cuando ya se conozca el dominio de
+producción, añade a la allow-list de redirects de Supabase tanto
+`https://<dominio-vercel-de-produccion>/auth/callback` como la callback local que
+use el entorno de desarrollo (por ejemplo,
+`http://localhost:<puerto>/auth/callback`). Verifica entonces login, callback y
+acceso privado antes de cambiar la publicación activa.
+
 ## Base de datos e importación histórica
 
 La migración inicial de Supabase está en

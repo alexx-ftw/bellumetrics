@@ -1,0 +1,17 @@
+{
+  "action": "merge_commanders",
+  "evidence": [
+    {
+      "citation": "Oxford Dictionary of National Biography, Arthur Wellesley",
+      "url": "https://example.test/wellesley"
+    }
+  ],
+  "reason": "The two imported records identify the same historical commander.",
+  "canonicalMutation": {
+    "action": "merge_commanders",
+    "source": { "type": "commander", "id": "war-atlas:arthur-wellesley" },
+    "target": { "type": "commander", "id": "wikidata:Q152245" }
+  },
+  "dataRevision": "war-atlas-2026-08-24",
+  "promptVersion": "curation-v1"
+}

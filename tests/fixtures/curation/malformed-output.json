@@ -1,0 +1,11 @@
+{
+  "action": "invent_rating",
+  "evidence": [
+    {
+      "citation": "Untrusted output"
+    }
+  ],
+  "reason": "The model attempted an unsupported action.",
+  "dataRevision": "war-atlas-2026-08-24",
+  "promptVersion": "curation-v1"
+}

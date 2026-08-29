@@ -1,0 +1,18 @@
+{
+  "action": "approve_battle",
+  "evidence": [],
+  "reason": "No citation was retained.",
+  "canonicalMutation": {
+    "action": "approve_battle",
+    "battle": {
+      "ref": { "type": "battle", "id": "war-atlas:waterloo" },
+      "slug": "waterloo",
+      "title": "Battle of Waterloo"
+    },
+    "commanderRefs": [
+      { "type": "commander", "id": "wikidata:Q517" }
+    ]
+  },
+  "dataRevision": "war-atlas-2026-08-24",
+  "promptVersion": "curation-v1"
+}

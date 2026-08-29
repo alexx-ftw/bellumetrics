@@ -1,0 +1,29 @@
+{
+  "promptVersion": "curation-v1",
+  "confidence": 0.41,
+  "dataRevision": "war-atlas-2026-08-24",
+  "reason": "Independent review found the same supported canonical record.",
+  "evidence": [
+    {
+      "citation": "Chandler, The Campaigns of Napoleon, p. 1021",
+      "locator": "p. 1021",
+      "url": "https://example.test/chandler-waterloo"
+    }
+  ],
+  "canonicalMutation": {
+    "commanderRefs": [
+      { "id": "wikidata:Q517", "type": "commander" },
+      { "id": "wikidata:Q152245", "type": "commander" }
+    ],
+    "battle": {
+      "outcome": "victory",
+      "endYear": 1815,
+      "startYear": 1815,
+      "title": "Battle of Waterloo",
+      "slug": "waterloo",
+      "ref": { "id": "war-atlas:waterloo", "type": "battle" }
+    },
+    "action": "approve_battle"
+  },
+  "action": "approve_battle"
+}

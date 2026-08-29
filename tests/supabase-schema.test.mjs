@@ -8,6 +8,16 @@ const migrationUrl = new URL(
   import.meta.url,
 );
 
+const curationMigrationUrl = new URL(
+  "../supabase/migrations/20260829182707_ai_curation.sql",
+  import.meta.url,
+);
+
+const rpcPrivilegeMigrationUrl = new URL(
+  "../supabase/migrations/20260829183417_restrict_worker_rpc_execution.sql",
+  import.meta.url,
+);
+
 const canonicalTables = [
   "campaigns",
   "claim_sources",
@@ -37,24 +47,335 @@ const identitySequences = [
   "sources_id_seq",
 ];
 
+const curationTableColumns = {
+  curator_memberships: [
+    ["user_id", "uuid"],
+    ["role", "text"],
+    ["created_at", "timestamp with time zone"],
+  ],
+  curation_cases: [
+    ["id", "bigint"],
+    ["case_key", "text"],
+    ["entity_type", "text"],
+    ["source_revision", "text"],
+    ["payload", "jsonb"],
+    ["status", "text"],
+    ["priority", "integer"],
+    ["lease_owner", "text"],
+    ["lease_expires_at", "timestamp with time zone"],
+    ["attempt_count", "integer"],
+    ["last_error", "text"],
+    ["created_at", "timestamp with time zone"],
+    ["updated_at", "timestamp with time zone"],
+  ],
+  ai_reviews: [
+    ["id", "bigint"],
+    ["case_id", "bigint"],
+    ["review_role", "text"],
+    ["model", "text"],
+    ["prompt_version", "text"],
+    ["evidence", "jsonb"],
+    ["decision", "jsonb"],
+    ["created_at", "timestamp with time zone"],
+  ],
+  editorial_events: [
+    ["id", "bigint"],
+    ["case_id", "bigint"],
+    ["actor_type", "text"],
+    ["actor_id", "text"],
+    ["action", "text"],
+    ["before_state", "jsonb"],
+    ["after_state", "jsonb"],
+    ["reason", "text"],
+    ["created_at", "timestamp with time zone"],
+  ],
+  ranking_jobs: [
+    ["id", "bigint"],
+    ["data_revision", "text"],
+    ["algorithm_version", "text"],
+    ["status", "text"],
+    ["lease_owner", "text"],
+    ["lease_expires_at", "timestamp with time zone"],
+    ["attempt_count", "integer"],
+    ["last_error", "text"],
+    ["created_at", "timestamp with time zone"],
+    ["completed_at", "timestamp with time zone"],
+  ],
+  ranking_snapshots: [
+    ["id", "bigint"],
+    ["data_revision", "text"],
+    ["algorithm_version", "text"],
+    ["results", "jsonb"],
+    ["created_at", "timestamp with time zone"],
+  ],
+};
+
+const curationPrimaryKeys = [
+  ["ai_reviews", "id"],
+  ["curation_cases", "id"],
+  ["curator_memberships", "user_id"],
+  ["editorial_events", "id"],
+  ["ranking_jobs", "id"],
+  ["ranking_snapshots", "id"],
+];
+
+const curationIdentitySequences = [
+  "ai_reviews_id_seq",
+  "curation_cases_id_seq",
+  "editorial_events_id_seq",
+  "ranking_jobs_id_seq",
+  "ranking_snapshots_id_seq",
+];
+
+const tablePrivileges = [
+  "SELECT", "INSERT", "UPDATE", "DELETE", "TRUNCATE", "REFERENCES", "TRIGGER", "MAINTAIN",
+];
+
+const sequencePrivileges = ["USAGE", "SELECT", "UPDATE"];
+
 async function migratedDatabase({ permissiveDefaults = false } = {}) {
   const db = new PGlite();
   await db.exec(`
     create role anon nologin;
     create role authenticated nologin;
     create role service_role nologin bypassrls;
+    create schema auth;
+    create function auth.uid() returns uuid
+      language sql stable
+      as $$
+        select nullif(current_setting('request.jwt.claim.sub', true), '')::uuid
+      $$;
+    grant usage on schema auth to authenticated;
     ${permissiveDefaults ? `
       alter default privileges in schema public
         grant all privileges on tables to anon, authenticated;
       alter default privileges in schema public
         grant all privileges on sequences to anon, authenticated;
+      alter default privileges in schema public
+        grant execute on functions to anon, authenticated;
     ` : ""}
   `);
   await db.exec(await readFile(migrationUrl, "utf8"));
+  await db.exec(await readFile(curationMigrationUrl, "utf8"));
+  await db.exec(await readFile(rpcPrivilegeMigrationUrl, "utf8"));
   return db;
 }
 
-test("creates the canonical and staging tables with RLS enabled", async () => {
+test("creates the curation tables with their required columns", async () => {
+  const db = await migratedDatabase();
+  try {
+    for (const [table, expectedColumns] of Object.entries(curationTableColumns)) {
+      const { rows } = await db.query(`
+        select a.attname as column_name, format_type(a.atttypid, a.atttypmod) as column_type
+        from pg_attribute a
+        where a.attrelid = $1::regclass
+          and a.attnum > 0
+          and not a.attisdropped
+        order by a.attnum
+      `, [`public.${table}`]);
+
+      assert.deepEqual(
+        rows.map(({ column_name, column_type }) => [column_name, column_type]),
+        expectedColumns,
+        `${table} does not have the required curation contract`,
+      );
+    }
+  } finally {
+    await db.close();
+  }
+});
+
+test("enforces curation primary keys, case references, and unique identifiers", async () => {
+  const db = await migratedDatabase();
+  try {
+    const { rows: primaryKeys } = await db.query(`
+      select c.relname as table_name, a.attname as column_name
+      from pg_constraint con
+      join pg_class c on c.oid = con.conrelid
+      join unnest(con.conkey) with ordinality key_column(attnum, position) on true
+      join pg_attribute a on a.attrelid = con.conrelid and a.attnum = key_column.attnum
+      where con.contype = 'p'
+        and c.relnamespace = 'public'::regnamespace
+        and c.relname in ('ai_reviews', 'curation_cases', 'curator_memberships',
+          'editorial_events', 'ranking_jobs', 'ranking_snapshots')
+      order by c.relname, key_column.position
+    `);
+    assert.deepEqual(
+      primaryKeys.map(({ table_name, column_name }) => [table_name, column_name]),
+      curationPrimaryKeys,
+      "every curation table must retain its required primary key",
+    );
+
+    const { rows: cases } = await db.query(`
+      insert into public.curation_cases (case_key, entity_type, source_revision, payload)
+      values ('constraint-case', 'battle', 'source-v1', '{}'::jsonb)
+      returning id
+    `);
+    const caseId = cases[0].id;
+
+    await assert.rejects(
+      db.exec(`
+        insert into public.curation_cases (case_key, entity_type, source_revision, payload)
+        values ('constraint-case', 'battle', 'source-v1', '{}'::jsonb)
+      `),
+      /duplicate key|unique constraint/i,
+      "case_key must remain unique",
+    );
+    for (const table of ["ai_reviews", "editorial_events"]) {
+      const insert = table === "ai_reviews"
+        ? `insert into public.ai_reviews (case_id, review_role, model, prompt_version, evidence, decision)
+          values (${caseId + 1}, 'proposer', 'test-model', 'v1', '[]'::jsonb, '{}'::jsonb)`
+        : `insert into public.editorial_events (case_id, actor_type, action)
+          values (${caseId + 1}, 'system', 'created')`;
+      await assert.rejects(
+        db.exec(insert),
+        /foreign key/i,
+        `${table}.case_id must reference curation_cases.id`,
+      );
+    }
+
+    await db.exec(`
+      insert into public.ranking_snapshots (data_revision, algorithm_version, results)
+      values ('data-v1', 'elo-v1', '[]'::jsonb)
+    `);
+    await assert.rejects(
+      db.exec(`
+        insert into public.ranking_snapshots (data_revision, algorithm_version, results)
+        values ('data-v1', 'elo-v1', '[]'::jsonb)
+      `),
+      /duplicate key|unique constraint/i,
+      "ranking snapshots must be unique per data and algorithm version",
+    );
+  } finally {
+    await db.close();
+  }
+});
+
+test("protects every curation table and sequence with least-privilege boundaries", async () => {
+  const db = await migratedDatabase({ permissiveDefaults: true });
+  try {
+    for (const table of Object.keys(curationTableColumns)) {
+      const { rows: rls } = await db.query(
+        "select relrowsecurity from pg_class where oid = $1::regclass",
+        [`public.${table}`],
+      );
+      assert.equal(rls[0].relrowsecurity, true, `${table} must enable RLS`);
+
+      for (const role of ["anon", "authenticated", "service_role"]) {
+        for (const privilege of tablePrivileges) {
+          const allowed = (await db.query(
+            "select has_table_privilege($1, $2, $3) as allowed",
+            [role, `public.${table}`, privilege],
+          )).rows[0].allowed;
+          assert.equal(
+            allowed,
+            role === "authenticated" && privilege === "SELECT",
+            `${role} has an unexpected ${privilege} privilege on ${table}`,
+          );
+        }
+      }
+    }
+
+    for (const sequence of curationIdentitySequences) {
+      for (const role of ["anon", "authenticated", "service_role"]) {
+        for (const privilege of sequencePrivileges) {
+          const allowed = (await db.query(
+            "select has_sequence_privilege($1, $2, $3) as allowed",
+            [role, `public.${sequence}`, privilege],
+          )).rows[0].allowed;
+          assert.equal(
+            allowed,
+            false,
+            `${role} has an unexpected ${privilege} privilege on ${sequence}`,
+          );
+        }
+      }
+    }
+  } finally {
+    await db.close();
+  }
+});
+
+test("worker RPCs remain service-role-only under permissive Supabase defaults", async () => {
+  const db = await migratedDatabase({ permissiveDefaults: true });
+  const workerFunctions = [
+    "public.enqueue_curation_case(text,text,text,jsonb)",
+    "public.heartbeat_curation_case(bigint,text,integer)",
+    "public.lease_curation_case(text,integer)",
+    "public.read_curation_reviews(bigint,text)",
+    "public.record_ai_review(bigint,text,text,text,text,jsonb,jsonb)",
+    "public.release_curation_case(bigint,text,text,text)",
+  ];
+
+  try {
+    for (const functionName of workerFunctions) {
+      for (const role of ["anon", "authenticated", "service_role"]) {
+        const { rows } = await db.query(
+          "select has_function_privilege($1, $2, 'EXECUTE') as allowed",
+          [role, functionName],
+        );
+        assert.equal(
+          rows[0].allowed,
+          role === "service_role",
+          `${role} has an unexpected EXECUTE privilege on ${functionName}`,
+        );
+      }
+    }
+  } finally {
+    await db.close();
+  }
+});
+
+test("only an owner membership can read curation records", async () => {
+  const db = await migratedDatabase();
+  const ownerId = "00000000-0000-0000-0000-000000000001";
+  const nonOwnerId = "00000000-0000-0000-0000-000000000002";
+  try {
+    await db.exec(`
+      insert into public.curator_memberships (user_id, role)
+      values ('${ownerId}', 'owner');
+      insert into public.curation_cases (case_key, entity_type, source_revision, payload)
+      values ('case-owner-read', 'battle', 'source-v1', '{}'::jsonb);
+      insert into public.ai_reviews (case_id, review_role, model, prompt_version, evidence, decision)
+      values (1, 'proposer', 'test-model', 'v1', '[]'::jsonb, '{}'::jsonb);
+      insert into public.editorial_events (case_id, actor_type, action)
+      values (1, 'system', 'created');
+      insert into public.ranking_jobs (data_revision, algorithm_version)
+      values ('data-v1', 'elo-v1');
+      insert into public.ranking_snapshots (data_revision, algorithm_version, results)
+      values ('data-v1', 'elo-v1', '[]'::jsonb);
+      select set_config('request.jwt.claim.sub', '${ownerId}', false);
+      set role authenticated;
+    `);
+
+    for (const table of Object.keys(curationTableColumns)) {
+      const { rows } = await db.query(`select count(*)::int as count from public.${table}`);
+      assert.deepEqual(rows, [{ count: 1 }], `owner could not read ${table}`);
+    }
+
+    await assert.rejects(
+      db.exec(`
+        insert into public.curation_cases (case_key, entity_type, source_revision, payload)
+        values ('browser-write', 'battle', 'source-v1', '{}'::jsonb)
+      `),
+      /permission denied|row-level security/i,
+    );
+
+    await db.exec(`
+      reset role;
+      select set_config('request.jwt.claim.sub', '${nonOwnerId}', false);
+      set role authenticated;
+    `);
+    for (const table of Object.keys(curationTableColumns)) {
+      const { rows } = await db.query(`select count(*)::int as count from public.${table}`);
+      assert.deepEqual(rows, [{ count: 0 }], `non-owner could read ${table}`);
+    }
+  } finally {
+    await db.close();
+  }
+});
+
+test("creates the canonical, staging, and curation tables with RLS enabled", async () => {
   const db = await migratedDatabase();
   try {
     const { rows: tables } = await db.query(`
@@ -67,11 +388,15 @@ test("creates the canonical and staging tables with RLS enabled", async () => {
     assert.deepEqual(
       tables.map(({ tablename }) => tablename),
       [
+        "ai_reviews",
         "campaigns",
         "claim_sources",
         "claims",
         "commander_claims",
         "commanders",
+        "curation_cases",
+        "curator_memberships",
+        "editorial_events",
         "engagement_claims",
         "engagement_sides",
         "engagements",
@@ -79,6 +404,8 @@ test("creates the canonical and staging tables with RLS enabled", async () => {
         "import_runs",
         "participation_claims",
         "participations",
+        "ranking_jobs",
+        "ranking_snapshots",
         "result_interpretation_claims",
         "result_interpretations",
         "sources",

@@ -1,0 +1,17 @@
+{
+  "action": "separate_commanders",
+  "evidence": [
+    {
+      "citation": "Prosopography of the Later Roman Empire, Vol. II",
+      "url": "https://example.test/plre"
+    }
+  ],
+  "reason": "The records refer to two distinct commanders.",
+  "canonicalMutation": {
+    "action": "separate_commanders",
+    "source": { "type": "commander", "id": "war-atlas:belisarius" },
+    "target": { "type": "commander", "id": "wikidata:Q310993" }
+  },
+  "dataRevision": "war-atlas-2026-08-24",
+  "promptVersion": "curation-v1"
+}

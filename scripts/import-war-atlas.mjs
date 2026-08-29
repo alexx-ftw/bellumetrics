@@ -2,6 +2,7 @@ import { pathToFileURL } from "node:url";
 
 import {
   chunkRecords,
+  createCurationCaseRepository,
   normalizeWarAtlasDataset,
 } from "../lib/import/war-atlas.mjs";
 
@@ -104,6 +105,17 @@ export async function stageWarAtlas({
   ]);
   const normalized = normalizeWarAtlasDataset({ manifest, battles });
   const { run, records } = normalized;
+  const curationCases = createCurationCaseRepository({
+    request: (payload) => checkedFetch(
+      fetchImpl,
+      restUrl(supabaseUrl, "rpc/enqueue_curation_case"),
+      {
+        method: "POST",
+        headers: supabaseHeaders(serviceRoleKey),
+        body: JSON.stringify(payload),
+      },
+    ),
+  });
   let importRunId;
 
   try {
@@ -151,6 +163,16 @@ export async function stageWarAtlas({
           body: JSON.stringify(batch.map((record) => recordRow(importRunId, record))),
         },
       );
+
+      for (const record of batch) {
+        if (record.entityType !== "battle") continue;
+        await curationCases.enqueueCase({
+          caseKey: `the-war-atlas:battle:${record.externalId}:${run.sourceVersion}`,
+          entityType: record.entityType,
+          sourceRevision: run.sourceVersion,
+          payload: record.payload,
+        });
+      }
     }
 
     await updateRun({
