@@ -82,6 +82,44 @@ jobs:
             vercel env add NEXT_PUBLIC_SITE_URL "${target}" --force --yes --no-sensitive --value "${NEXT_PUBLIC_SITE_URL}" --token "${VERCEL_TOKEN}"
           done
 
+      - name: Configure Supabase Auth redirects
+        env:
+          SUPABASE_ACCESS_TOKEN: ${{ secrets.SUPABASE_ACCESS_TOKEN }}
+        run: |
+          set -euo pipefail
+          auth_config_url="https://api.supabase.com/v1/projects/dggbwsgoddbrxvojjojy/config/auth"
+          curl --silent --show-error --fail \
+            --header "Authorization: Bearer ${SUPABASE_ACCESS_TOKEN}" \
+            --output "${RUNNER_TEMP}/auth-config-before.json" \
+            "${auth_config_url}"
+
+          allow_list="$(jq --raw-output \
+            --arg production "${NEXT_PUBLIC_SITE_URL}/auth/callback" \
+            --arg local "http://localhost:3000/auth/callback" \
+            '[((.uri_allow_list // "") | split(",")[]) | select(length > 0), $production, $local] | unique | join(",")' \
+            "${RUNNER_TEMP}/auth-config-before.json")"
+
+          jq --null-input \
+            --arg site_url "${NEXT_PUBLIC_SITE_URL}" \
+            --arg uri_allow_list "${allow_list}" \
+            '{site_url: $site_url, uri_allow_list: $uri_allow_list}' \
+            > "${RUNNER_TEMP}/auth-config-patch.json"
+
+          curl --silent --show-error --fail \
+            --request PATCH \
+            --header "Authorization: Bearer ${SUPABASE_ACCESS_TOKEN}" \
+            --header "Content-Type: application/json" \
+            --data-binary "@${RUNNER_TEMP}/auth-config-patch.json" \
+            --output "${RUNNER_TEMP}/auth-config-after.json" \
+            "${auth_config_url}"
+
+          jq --exit-status \
+            --arg site_url "${NEXT_PUBLIC_SITE_URL}" \
+            --arg production "${NEXT_PUBLIC_SITE_URL}/auth/callback" \
+            --arg local "http://localhost:3000/auth/callback" \
+            '.site_url == $site_url and (.uri_allow_list | contains($production)) and (.uri_allow_list | contains($local))' \
+            "${RUNNER_TEMP}/auth-config-after.json" > /dev/null
+
       - name: Deploy isolated application
         id: deploy
         env:
