@@ -118,6 +118,8 @@ jobs:
             --output "${RUNNER_TEMP}/auth-config-after.json" \
             "${auth_config_url}"
 
+          jq '{site_url, uri_allow_list}' "${RUNNER_TEMP}/auth-config-after.json"
+
           jq --exit-status \
             --arg site_url "${NEXT_PUBLIC_SITE_URL}" \
             --arg production "${NEXT_PUBLIC_SITE_URL}/auth/callback" \
