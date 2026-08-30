@@ -73,12 +73,13 @@ test("a normal Next build retains the server auth callback route", async () => {
   assert.equal(manifest["/curation/page"], "app/curation/page.js");
 });
 
-test("the Vercel workflow sends Supabase redirect URLs as a JSON list", async () => {
+test("the Vercel workflow appends Supabase redirects even when the list is empty", async () => {
   const workflow = await readFile(
     new URL("../.github/workflows/vercel-preview.yml", import.meta.url),
     "utf8",
   );
 
-  assert.match(workflow, /--argjson uri_allow_list/);
-  assert.match(workflow, /uri_allow_list \| type\) == "array"/);
+  assert.match(workflow, /\+ \[\$production, \$local\]/);
+  assert.match(workflow, /--arg uri_allow_list/);
+  assert.doesNotMatch(workflow, /--argjson uri_allow_list/);
 });
