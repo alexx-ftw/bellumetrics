@@ -90,3 +90,22 @@ jobs:
           set -euo pipefail
           deployment_url="$(vercel . --prod --yes --token "${VERCEL_TOKEN}")"
           echo "Deployment: ${deployment_url}" >> "${GITHUB_STEP_SUMMARY}"
+
+      - name: Verify public and private routes
+        run: |
+          set -euo pipefail
+          for route in / /login; do
+            status="$(curl --silent --show-error \
+              --retry 5 --retry-all-errors --retry-delay 2 \
+              --output /dev/null --write-out '%{http_code}' \
+              "${NEXT_PUBLIC_SITE_URL}${route}")"
+            [[ "${status}" == "200" ]]
+          done
+
+          status="$(curl --silent --show-error \
+            --retry 5 --retry-all-errors --retry-delay 2 \
+            --output /dev/null --dump-header "${RUNNER_TEMP}/curation.headers" \
+            --write-out '%{http_code}' \
+            "${NEXT_PUBLIC_SITE_URL}/curation")"
+          [[ "${status}" =~ ^30[2378]$ ]]
+          grep --quiet --ignore-case '^location: .*/login' "${RUNNER_TEMP}/curation.headers"
