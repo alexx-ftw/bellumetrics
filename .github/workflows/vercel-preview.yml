@@ -127,32 +127,6 @@ jobs:
             '.site_url == $site_url and ((.uri_allow_list // "") | split(",") | index($production) != null) and ((.uri_allow_list // "") | split(",") | index($local) != null)' \
             "${RUNNER_TEMP}/auth-config-after.json" > /dev/null
 
-      - name: Bootstrap the sole confirmed curation owner
-        env:
-          PGPASSWORD: ${{ secrets.SUPABASE_DB_PASSWORD }}
-        run: |
-          set -euo pipefail
-          database_url="postgresql://postgres.dggbwsgoddbrxvojjojy@aws-0-eu-west-2.pooler.supabase.com:5432/postgres?sslmode=require"
-
-          psql "${database_url}" --set ON_ERROR_STOP=1 <<'SQL'
-          do $$
-          declare
-            owner_id uuid;
-          begin
-            select id into strict owner_id
-            from auth.users
-            where email_confirmed_at is not null;
-
-            insert into public.curator_memberships (user_id, role)
-            values (owner_id, 'owner')
-            on conflict (user_id) do update set role = excluded.role;
-          end;
-          $$;
-          SQL
-
-          [[ "$(psql "${database_url}" --tuples-only --no-align --set ON_ERROR_STOP=1 \
-            --command "select count(*) from public.curator_memberships membership join auth.users account on account.id = membership.user_id where membership.role = 'owner' and account.email_confirmed_at is not null;")" == "1" ]]
-
       - name: Deploy isolated application
         id: deploy
         env:
