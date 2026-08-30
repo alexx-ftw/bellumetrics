@@ -27,7 +27,7 @@ async function exists(path) {
   }
 }
 
-test("Vercel uses the safe application build and never invokes the Oracle worker", async () => {
+test("Vercel uses the Next.js server build and never invokes the Oracle worker", async () => {
   let source = "";
   try {
     source = await readFile(new URL("../vercel.json", import.meta.url), "utf8");
@@ -38,9 +38,14 @@ test("Vercel uses the safe application build and never invokes the Oracle worker
   assert.ok(source, "Vercel must declare a project build configuration");
   const config = JSON.parse(source);
 
-  assert.equal(config.buildCommand, "npm run build");
+  assert.equal(config.buildCommand, "npm run build:vercel");
   assert.equal(config.installCommand, "npm ci");
   assert.doesNotMatch(JSON.stringify(config), /worker:|worker\/|oracle/i);
+
+  const packageJson = JSON.parse(
+    await readFile(new URL("../package.json", import.meta.url), "utf8"),
+  );
+  assert.equal(packageJson.scripts["build:vercel"], "next build");
 });
 
 test("Pages stays a /bellumetrics static export without private routes", async () => {

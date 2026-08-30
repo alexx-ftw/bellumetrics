@@ -1,0 +1,92 @@
+name: Deploy Vercel preview
+
+on:
+  workflow_dispatch:
+  push:
+    branches:
+      - agent/ai-curation-implementation
+
+permissions:
+  contents: read
+
+concurrency:
+  group: vercel-ai-curation-preview
+  cancel-in-progress: true
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    env:
+      VERCEL_TEAM_ID: team_JZNhMnUHjJjz702saReGAWxc
+      VERCEL_TEAM_SLUG: eroszansan-2888s-projects
+      VERCEL_PROJECT_NAME: bellumetrics-curation-preview
+      NEXT_PUBLIC_SUPABASE_URL: https://dggbwsgoddbrxvojjojy.supabase.co
+      NEXT_PUBLIC_SUPABASE_ANON_KEY: sb_publishable_vSPZ4xfqXYdcuaUxm3ud4w_pPQ6mMzM
+      NEXT_PUBLIC_SITE_URL: https://bellumetrics-curation-preview.vercel.app
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      - name: Install Vercel CLI
+        run: npm install --global vercel@59.10.0
+
+      - name: Ensure isolated Vercel project exists
+        env:
+          VERCEL_TOKEN: ${{ secrets.VERCEL_TOKEN }}
+        run: |
+          set -euo pipefail
+          project_url="https://api.vercel.com/v9/projects/${VERCEL_PROJECT_NAME}?teamId=${VERCEL_TEAM_ID}"
+          status="$(curl --silent --show-error \
+            --output "${RUNNER_TEMP}/vercel-project.json" \
+            --write-out '%{http_code}' \
+            --header "Authorization: Bearer ${VERCEL_TOKEN}" \
+            "${project_url}")"
+
+          if [[ "${status}" == "404" ]]; then
+            status="$(curl --silent --show-error \
+              --output "${RUNNER_TEMP}/vercel-project-create.json" \
+              --write-out '%{http_code}' \
+              --request POST \
+              --header "Authorization: Bearer ${VERCEL_TOKEN}" \
+              --header "Content-Type: application/json" \
+              --data '{"name":"bellumetrics-curation-preview","framework":"nextjs","installCommand":"npm ci","buildCommand":"npm run build:vercel","skipGitConnectDuringLink":true}' \
+              "https://api.vercel.com/v11/projects?teamId=${VERCEL_TEAM_ID}")"
+            [[ "${status}" == "200" || "${status}" == "201" ]]
+          else
+            [[ "${status}" == "200" ]]
+          fi
+
+      - name: Link project
+        env:
+          VERCEL_TOKEN: ${{ secrets.VERCEL_TOKEN }}
+        run: >-
+          vercel link --yes
+          --team "${VERCEL_TEAM_ID}"
+          --project "${VERCEL_PROJECT_NAME}"
+          --token "${VERCEL_TOKEN}"
+
+      - name: Configure public application variables
+        env:
+          VERCEL_TOKEN: ${{ secrets.VERCEL_TOKEN }}
+        run: |
+          set -euo pipefail
+          for target in production preview; do
+            vercel env add NEXT_PUBLIC_SUPABASE_URL "${target}" --force --yes --no-sensitive --value "${NEXT_PUBLIC_SUPABASE_URL}" --token "${VERCEL_TOKEN}"
+            vercel env add NEXT_PUBLIC_SUPABASE_ANON_KEY "${target}" --force --yes --no-sensitive --value "${NEXT_PUBLIC_SUPABASE_ANON_KEY}" --token "${VERCEL_TOKEN}"
+            vercel env add NEXT_PUBLIC_SITE_URL "${target}" --force --yes --no-sensitive --value "${NEXT_PUBLIC_SITE_URL}" --token "${VERCEL_TOKEN}"
+          done
+
+      - name: Deploy isolated application
+        id: deploy
+        env:
+          VERCEL_TOKEN: ${{ secrets.VERCEL_TOKEN }}
+        run: |
+          set -euo pipefail
+          deployment_url="$(vercel . --prod --yes --token "${VERCEL_TOKEN}")"
+          echo "Deployment: ${deployment_url}" >> "${GITHUB_STEP_SUMMARY}"
