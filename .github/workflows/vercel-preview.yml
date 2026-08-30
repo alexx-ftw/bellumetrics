@@ -110,6 +110,11 @@ jobs:
             --header "Authorization: Bearer ${SUPABASE_ACCESS_TOKEN}" \
             --header "Content-Type: application/json" \
             --data-binary "@${RUNNER_TEMP}/auth-config-patch.json" \
+            --output /dev/null \
+            "${auth_config_url}"
+
+          curl --silent --show-error --fail \
+            --header "Authorization: Bearer ${SUPABASE_ACCESS_TOKEN}" \
             --output "${RUNNER_TEMP}/auth-config-after.json" \
             "${auth_config_url}"
 
