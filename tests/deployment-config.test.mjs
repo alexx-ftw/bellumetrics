@@ -51,7 +51,10 @@ test("Vercel uses the Next.js server build and never invokes the Oracle worker",
 test("Pages stays a /bellumetrics static export without private routes", async () => {
   buildNext({ GITHUB_PAGES: "1" });
 
-  const html = await readFile(new URL("../out/index.html", import.meta.url), "utf8");
+  const html = await readFile(
+    new URL("../out/index.html", import.meta.url),
+    "utf8",
+  );
   assert.match(html, /(?:src|href)="\/bellumetrics\//);
   assert.equal(await exists("../out/curation/index.html"), false);
   assert.equal(await exists("../out/auth/callback/index.html"), false);
@@ -61,8 +64,21 @@ test("a normal Next build retains the server auth callback route", async () => {
   buildNext({ GITHUB_PAGES: "" });
 
   const manifest = JSON.parse(
-    await readFile(new URL("../.next/server/app-paths-manifest.json", import.meta.url), "utf8"),
+    await readFile(
+      new URL("../.next/server/app-paths-manifest.json", import.meta.url),
+      "utf8",
+    ),
   );
   assert.equal(manifest["/auth/callback/route"], "app/auth/callback/route.js");
   assert.equal(manifest["/curation/page"], "app/curation/page.js");
+});
+
+test("the Vercel workflow sends Supabase redirect URLs as a JSON list", async () => {
+  const workflow = await readFile(
+    new URL("../.github/workflows/vercel-preview.yml", import.meta.url),
+    "utf8",
+  );
+
+  assert.match(workflow, /--argjson uri_allow_list/);
+  assert.match(workflow, /uri_allow_list \| type\) == "array"/);
 });

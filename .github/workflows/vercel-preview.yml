@@ -93,15 +93,15 @@ jobs:
             --output "${RUNNER_TEMP}/auth-config-before.json" \
             "${auth_config_url}"
 
-          allow_list="$(jq --raw-output \
+          allow_list="$(jq --compact-output \
             --arg production "${NEXT_PUBLIC_SITE_URL}/auth/callback" \
             --arg local "http://localhost:3000/auth/callback" \
-            '[((.uri_allow_list // "") | split(",")[]) | select(length > 0), $production, $local] | unique | join(",")' \
+            '((if (.uri_allow_list | type) == "array" then .uri_allow_list else ((.uri_allow_list // "") | split(",")) end) + [$production, $local]) | map(select(length > 0)) | unique' \
             "${RUNNER_TEMP}/auth-config-before.json")"
 
           jq --null-input \
             --arg site_url "${NEXT_PUBLIC_SITE_URL}" \
-            --arg uri_allow_list "${allow_list}" \
+            --argjson uri_allow_list "${allow_list}" \
             '{site_url: $site_url, uri_allow_list: $uri_allow_list}' \
             > "${RUNNER_TEMP}/auth-config-patch.json"
 
@@ -124,7 +124,7 @@ jobs:
             --arg site_url "${NEXT_PUBLIC_SITE_URL}" \
             --arg production "${NEXT_PUBLIC_SITE_URL}/auth/callback" \
             --arg local "http://localhost:3000/auth/callback" \
-            '.site_url == $site_url and (.uri_allow_list | contains($production)) and (.uri_allow_list | contains($local))' \
+            'def redirects: if (.uri_allow_list | type) == "array" then .uri_allow_list else ((.uri_allow_list // "") | split(",")) end; .site_url == $site_url and (redirects | index($production) != null) and (redirects | index($local) != null)' \
             "${RUNNER_TEMP}/auth-config-after.json" > /dev/null
 
       - name: Deploy isolated application
