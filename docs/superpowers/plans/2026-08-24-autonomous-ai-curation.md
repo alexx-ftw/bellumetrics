@@ -4,16 +4,16 @@
 
 **Goal:** Deliver an auditable Bellumetrics pipeline where two independent Codex agents curate staged historical records, compatible decisions publish automatically, disagreements reach the owner, and every accepted battle produces a reproducible Elo snapshot.
 
-**Architecture:** Supabase is the source of truth for staging, canonical data, leases, reviews, audit events, and ranking snapshots. A Node.js worker on Oracle Cloud leases one case at a time and invokes local Codex SDK sessions authenticated through ChatGPT Pro. Next.js on Vercel provides public pages and a private Supabase magic-link curation panel. Database RPCs enforce atomic state transitions so restarts cannot duplicate publication.
+**Architecture:** Supabase is the source of truth for staging, canonical data, leases, reviews, audit events, and ranking snapshots. A native ChatGPT/Codex scheduled task runs hourly, leases at most one case, and uses the connected GitHub and Supabase tools. It consumes the owner's ChatGPT plan allowance without an OpenAI API key or separate per-token API bill. Next.js on Vercel provides public pages and a private Supabase magic-link curation panel. Database RPCs enforce atomic state transitions so interrupted runs cannot duplicate publication.
 
-**Tech Stack:** Node.js 22 ESM, Next.js 16, React 19, Supabase Postgres/Auth/PostgREST, pgTAP, PGlite, OpenAI Codex SDK, systemd, Vercel, GitHub Actions.
+**Tech Stack:** Node.js 22 ESM, Next.js 16, React 19, Supabase Postgres/Auth/PostgREST, pgTAP, PGlite, ChatGPT/Codex Scheduled tasks, connected GitHub and Supabase tools, Vercel, GitHub Actions. The Codex SDK and systemd package remain an optional legacy self-hosted fallback.
 
 **Spec:** `docs/superpowers/specs/2026-08-16-ai-curation-design.md`
 
 ## Global Constraints
 
 - Keep GitHub Pages live until the Vercel deployment passes the acceptance checks.
-- Never place `~/.codex/auth.json`, ChatGPT tokens, Supabase service credentials, or magic-link sessions in Git, logs, browser bundles, GitHub Actions artifacts, or database rows.
+- Never place Codex login caches, ChatGPT tokens, Supabase service credentials, or magic-link sessions in Git, logs, browser bundles, GitHub Actions artifacts, or database rows.
 - Use two fresh Codex threads. The reviewer receives the case evidence but not the proposer's conclusion or reasoning.
 - Do not encode editorial confidence thresholds. Only schema validation, authorization, idempotency, lease timing, retry limits, and ranking algorithm constants are deterministic.
 - Agents return proposed canonical mutations, never Elo values.
@@ -39,7 +39,9 @@
 - `lib/supabase/{browser,server}.ts`: scoped Supabase clients for Next.js.
 - `app/auth/*`, `middleware.ts`: magic-link login and owner authorization.
 - `app/curation/*`: private exception queue, review detail, history, and actions.
-- `deploy/oracle/*`: repeatable worker installation and systemd units.
+- `deploy/codex/scheduled-task.json`: checked scheduled-task cadence, connector, and batch limits.
+- `worker/curation/prompts/scheduled-task-v1.md`: durable fail-closed instructions for each scheduled run.
+- `deploy/oracle/*`: optional legacy self-hosted worker installation and systemd units; not the active deployment.
 - `docs/operations/ai-curation.md`: setup, login, rotation, recovery, and rollback runbook.
 
 ### Task 1: Add the curation schema and authorization boundary
@@ -509,7 +511,10 @@ git add app/curation components/curation app/globals.css tests/curation-ui.test.
 git commit -m "feat: add exception-first curation panel"
 ```
 
-### Task 10: Package the Oracle Always Free worker
+### Task 10: Package the optional Oracle worker (legacy fallback)
+
+This completed package is retained for portability but is superseded by Task
+10B for the active deployment. Do not provision Oracle for Task 12.
 
 **Files:**
 - Create: `worker/index.mjs`
@@ -545,6 +550,43 @@ git add worker/index.mjs deploy/oracle docs/operations/ai-curation.md tests/orac
 git commit -m "ops: package Oracle curation worker"
 ```
 
+### Task 10B: Define the native ChatGPT/Codex scheduled task
+
+**Files:**
+- Create: `deploy/codex/scheduled-task.json`
+- Create: `worker/curation/prompts/scheduled-task-v1.md`
+- Create: `tests/curation-scheduled-task.test.mjs`
+- Modify: `docs/operations/ai-curation.md`
+
+- [ ] **Step 1: Add a failing scheduled-task contract test**
+
+Require an hourly task in `Atlantic/Canary`, the GitHub and Supabase
+connectors, and a maximum of one curation case per run. Assert the durable
+prompt fails closed, preserves proposer/reviewer isolation, uses only the
+versioned RPC boundary, and never places ChatGPT account authentication in
+GitHub Actions.
+
+- [ ] **Step 2: Add the manifest and durable prompt**
+
+The prompt must be self-contained because web scheduled tasks do not retain a
+local checkout between runs. It retrieves the versioned prompts and executable
+contracts from the connected repository, validates each model output, persists
+both reviews before consensus, and runs the exact checked-in Elo algorithm.
+
+- [ ] **Step 3: Document activation and recovery**
+
+Run the prompt manually against one fixture before creating the schedule.
+Create the native task only after that run is reliable. Document pausing,
+connector reconnection, lease expiry, evidence review, and the legacy Oracle
+fallback. Do not create an OpenAI API key or copy a ChatGPT login cache.
+
+- [ ] **Step 4: Verify**
+
+Run:
+```bash
+node --test tests/curation-scheduled-task.test.mjs tests/oracle-deploy.test.mjs
+```
+
 ### Task 11: Deploy to Vercel without breaking GitHub Pages
 
 **Files:**
@@ -556,7 +598,7 @@ git commit -m "ops: package Oracle curation worker"
 
 - [ ] **Step 1: Write failing deployment tests**
 
-Assert `GITHUB_PAGES=1` still produces the static `/bellumetrics` export, normal builds remain server-capable for auth, and Vercel never runs the Oracle worker.
+Assert `GITHUB_PAGES=1` still produces the static `/bellumetrics` export, normal builds remain server-capable for auth, and Vercel never runs a curation worker.
 
 - [ ] **Step 2: Configure Vercel**
 
@@ -608,9 +650,13 @@ After the owner signs in once, insert their Auth user UUID into `curator_members
 
 Verify public routes, login, callback, owner-only `/curation`, server rendering, mobile layout, and that the GitHub Pages URL remains healthy.
 
-- [ ] **Step 4: Start the Oracle worker**
+- [ ] **Step 4: Validate and create the native scheduled task**
 
-Perform device login interactively on Oracle, start `bellumetrics-worker.service`, and verify no inbound port is opened by the service.
+Run `scheduled-task-v1` manually against one staged fixture using the connected
+GitHub and Supabase tools. Verify its exact RPC calls, redacted report,
+proposer/reviewer isolation, and one-case limit. After the manual run succeeds,
+create the hourly task from `deploy/codex/scheduled-task.json`. Confirm no
+OpenAI API key or ChatGPT credential was added to GitHub, Vercel, or Supabase.
 
 - [ ] **Step 5: Execute the acceptance scenario**
 
@@ -621,7 +667,7 @@ Use one staged battle fixture:
 3. Verify compatible agreement publishes canonical rows once.
 4. Verify one ranking job produces one `elo-v1` snapshot.
 5. Force disagreement and verify `awaiting_human` appears in the panel.
-6. Restart the worker during a lease and verify recovery without duplication.
+6. Interrupt one run after leasing and verify the next scheduled or manual run recovers without duplication.
 7. Publish a merge, revert it, and verify all relationships and sources return.
 8. Search repository, logs, browser bundle, and artifacts for credential patterns.
 

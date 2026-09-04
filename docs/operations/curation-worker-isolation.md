@@ -1,5 +1,9 @@
 # Curation worker isolation prerequisites
 
+> Legacy fallback only. The active deployment uses the native ChatGPT/Codex
+> scheduled task described in `docs/operations/ai-curation.md` and does not
+> export ChatGPT account credentials to a local worker or GitHub Actions.
+
 The production curation worker refuses to start a real Codex run unless its
 Linux filesystem namespace can be created. Task 10 deployment work must:
 

@@ -26,6 +26,10 @@ const ownerPublicationMigrationUrl = new URL(
   "../supabase/migrations/20260829183033_owner_canonical_publication.sql",
   import.meta.url,
 );
+const commanderBootstrapMigrationUrl = new URL(
+  "../supabase/migrations/20260904173741_bootstrap_war_atlas_commanders.sql",
+  import.meta.url,
+);
 
 const ownerId = "00000000-0000-0000-0000-000000000001";
 const nonOwnerId = "00000000-0000-0000-0000-000000000002";
@@ -48,6 +52,7 @@ async function migratedDatabase() {
   await db.exec(await readFile(curationMigrationUrl, "utf8"));
   await db.exec(await readFile(publicationMigrationUrl, "utf8"));
   await db.exec(await readFile(ownerPublicationMigrationUrl, "utf8"));
+  await db.exec(await readFile(commanderBootstrapMigrationUrl, "utf8"));
   return db;
 }
 
@@ -78,6 +83,15 @@ function approvalDecision(promptVersion) {
     dataRevision: "war-atlas-2026-08-24",
     promptVersion,
   };
+}
+
+function warAtlasApprovalDecision(promptVersion) {
+  const decision = approvalDecision(promptVersion);
+  decision.canonicalMutation.commanderRefs = [
+    { type: "commander", id: "war-atlas:napoleon_bonaparte" },
+    { type: "commander", id: "war-atlas:arthur_wellesley" },
+  ];
+  return decision;
 }
 
 function identityDecision(action, promptVersion) {
@@ -174,6 +188,236 @@ async function seedBattleCommanders(db) {
       ('arthur-wellesley', 'Arthur Wellesley', 'Q152245', 'published');
   `);
 }
+
+test("an AI approval creates ordered War Atlas commanders with canonical slugs exactly once", async () => {
+  const db = await migratedDatabase();
+  try {
+    const caseId = await insertLeasedCase(db, {
+      caseKey: "publish-waterloo-with-imported-commanders",
+      entityType: "battle",
+      payload: {
+        wikidata_qid: "Q48314",
+        date_iso: "1815-06-18",
+        commanders: [
+          {
+            slug: "napoleon_bonaparte",
+            name: "Napoleon Bonaparte",
+            side: "France",
+            rank: "Emperor",
+          },
+          {
+            slug: "arthur_wellesley",
+            name: "Arthur Wellesley",
+            side: "Coalition",
+            rank: "Field Marshal",
+          },
+        ],
+        source_slugs: ["chandler-waterloo"],
+      },
+    });
+    const proposer = warAtlasApprovalDecision("proposer-v1");
+    const reviewer = warAtlasApprovalDecision("reviewer-v1");
+    await insertReviews(db, caseId, proposer, reviewer);
+
+    const first = await publish(db, caseId);
+    const repeated = await publish(db, caseId);
+
+    assert.deepEqual(repeated, first);
+    assert.deepEqual((await db.query(`
+      select slug, display_name, publication_status
+      from public.commanders
+      order by slug
+    `)).rows, [
+      {
+        slug: "arthur-wellesley",
+        display_name: "Arthur Wellesley",
+        publication_status: "published",
+      },
+      {
+        slug: "napoleon-bonaparte",
+        display_name: "Napoleon Bonaparte",
+        publication_status: "published",
+      },
+    ]);
+    assert.deepEqual((await db.query(`
+      select side.position, commander.slug
+      from public.engagement_sides side
+      join public.participations participation
+        on participation.engagement_side_id = side.id
+      join public.commanders commander on commander.id = participation.commander_id
+      order by side.position
+    `)).rows, [
+      { position: 1, slug: "napoleon-bonaparte" },
+      { position: 2, slug: "arthur-wellesley" },
+    ]);
+    assert.deepEqual((await db.query(`
+      select
+        jsonb_array_length(before_state->'commanders') as before_commanders,
+        jsonb_array_length(after_state->'commanders') as after_commanders
+      from public.editorial_events
+      where id = $1
+    `, [first.event_id])).rows, [{ before_commanders: 0, after_commanders: 2 }]);
+  } finally {
+    await db.close();
+  }
+});
+
+test("reversing a bootstrapped battle removes only its newly created commanders", async () => {
+  const db = await migratedDatabase();
+  try {
+    await db.exec(`
+      insert into public.commanders (slug, display_name, publication_status)
+      values ('napoleon-bonaparte', 'Napoleon I (canonical)', 'published');
+    `);
+    await db.exec(`insert into public.curator_memberships (user_id, role) values ('${ownerId}', 'owner');`);
+    const caseId = await insertLeasedCase(db, {
+      caseKey: "reverse-waterloo-with-imported-commanders",
+      entityType: "battle",
+      payload: {
+        date_iso: "1815-06-18",
+        commanders: [
+          { slug: "napoleon_bonaparte", name: "Napoleon Bonaparte", side: "France", rank: "Emperor" },
+          { slug: "arthur_wellesley", name: "Arthur Wellesley", side: "Coalition", rank: "Field Marshal" },
+        ],
+      },
+    });
+    await insertReviews(
+      db,
+      caseId,
+      warAtlasApprovalDecision("proposer-v1"),
+      warAtlasApprovalDecision("reviewer-v1"),
+    );
+    const published = await publish(db, caseId);
+
+    await db.exec(`select set_config('request.jwt.claim.sub', '${ownerId}', false); set role authenticated;`);
+    await db.query(
+      "select * from public.revert_editorial_event($1, $2, $3)",
+      [published.event_id, ownerId, "Remove the imported battle and its new commanders"],
+    );
+    await db.exec("reset role");
+
+    assert.deepEqual((await db.query(`
+      select
+        (select count(*)::integer from public.engagements) as engagements,
+        (select count(*)::integer from public.commanders) as commanders,
+        (select count(*)::integer from public.editorial_events) as events
+    `)).rows, [{ engagements: 0, commanders: 1, events: 2 }]);
+    assert.deepEqual((await db.query(`
+      select slug, display_name, publication_status from public.commanders
+    `)).rows, [{
+      slug: "napoleon-bonaparte",
+      display_name: "Napoleon I (canonical)",
+      publication_status: "published",
+    }]);
+  } finally {
+    await db.close();
+  }
+});
+
+test("approval never creates unresolved canonical or Wikidata commander references", async () => {
+  for (const [namespace, commanderRefs] of [
+    ["canonical", [
+      { type: "commander", id: "canonical:999" },
+      { type: "commander", id: "canonical:1000" },
+    ]],
+    ["wikidata", [
+      { type: "commander", id: "wikidata:Q517" },
+      { type: "commander", id: "wikidata:Q152245" },
+    ]],
+  ]) {
+    const db = await migratedDatabase();
+    try {
+      const caseId = await insertLeasedCase(db, {
+        caseKey: `reject-unresolved-${namespace}-commanders`,
+        entityType: "battle",
+        payload: {
+          commanders: [
+            { slug: "napoleon", name: "Napoleon Bonaparte", side: "France", rank: "Emperor" },
+            { slug: "wellington", name: "Arthur Wellesley", side: "Coalition", rank: "Field Marshal" },
+          ],
+        },
+      });
+      const proposer = approvalDecision("proposer-v1");
+      proposer.canonicalMutation.commanderRefs = commanderRefs;
+      const reviewer = approvalDecision("reviewer-v1");
+      reviewer.canonicalMutation.commanderRefs = commanderRefs;
+      await insertReviews(db, caseId, proposer, reviewer);
+
+      await assert.rejects(publish(db, caseId), /commander reference does not resolve/i);
+      assert.deepEqual((await db.query(`
+        select
+          (select count(*)::integer from public.commanders) as commanders,
+          (select count(*)::integer from public.engagements) as engagements,
+          (select count(*)::integer from public.editorial_events) as events
+      `)).rows, [{ commanders: 0, engagements: 0, events: 0 }]);
+    } finally {
+      await db.close();
+    }
+  }
+});
+
+test("War Atlas commander refs cannot create identities during merge or separation", async () => {
+  for (const action of ["merge_commanders", "separate_commanders"]) {
+    const db = await migratedDatabase();
+    try {
+      const caseId = await insertLeasedCase(db, {
+        caseKey: `no-bootstrap-during-${action}`,
+        entityType: "commander",
+        payload: {
+          slug: "arthur_wellesley",
+          name: "Arthur Wellesley",
+        },
+      });
+      await insertReviews(
+        db,
+        caseId,
+        identityDecision(action, "proposer-v1"),
+        identityDecision(action, "reviewer-v1"),
+      );
+
+      await assert.rejects(publish(db, caseId), /commander reference does not resolve/i);
+      assert.deepEqual((await db.query(`
+        select
+          (select count(*)::integer from public.commanders) as commanders,
+          (select count(*)::integer from public.editorial_events) as events
+      `)).rows, [{ commanders: 0, events: 0 }]);
+    } finally {
+      await db.close();
+    }
+  }
+});
+
+test("War Atlas commander refs must match the ordered battle payload", async () => {
+  const db = await migratedDatabase();
+  try {
+    const caseId = await insertLeasedCase(db, {
+      caseKey: "reject-misaligned-war-atlas-commanders",
+      entityType: "battle",
+      payload: {
+        commanders: [
+          { slug: "arthur_wellesley", name: "Arthur Wellesley", side: "Coalition", rank: "Field Marshal" },
+          { slug: "napoleon_bonaparte", name: "Napoleon Bonaparte", side: "France", rank: "Emperor" },
+        ],
+      },
+    });
+    await insertReviews(
+      db,
+      caseId,
+      warAtlasApprovalDecision("proposer-v1"),
+      warAtlasApprovalDecision("reviewer-v1"),
+    );
+
+    await assert.rejects(publish(db, caseId), /does not match the ordered payload/i);
+    assert.deepEqual((await db.query(`
+      select
+        (select count(*)::integer from public.commanders) as commanders,
+        (select count(*)::integer from public.engagements) as engagements,
+        (select count(*)::integer from public.editorial_events) as events
+    `)).rows, [{ commanders: 0, engagements: 0, events: 0 }]);
+  } finally {
+    await db.close();
+  }
+});
 
 test("publishes an approved battle and its complete audit graph exactly once", async () => {
   const db = await migratedDatabase();
@@ -591,23 +835,22 @@ test("deduplicates evidence items that resolve to the same canonical source", as
 test("rolls back every canonical mutation and audit row when the final enqueue fails", async () => {
   const db = await migratedDatabase();
   try {
-    await seedBattleCommanders(db);
     const caseId = await insertLeasedCase(db, {
       caseKey: "rollback-waterloo",
       entityType: "battle",
       payload: {
         date_iso: "1815-06-18",
         commanders: [
-          { side: "France", rank: "Emperor" },
-          { side: "Coalition", rank: "Field Marshal" },
+          { slug: "napoleon_bonaparte", name: "Napoleon Bonaparte", side: "France", rank: "Emperor" },
+          { slug: "arthur_wellesley", name: "Arthur Wellesley", side: "Coalition", rank: "Field Marshal" },
         ],
       },
     });
     await insertReviews(
       db,
       caseId,
-      approvalDecision("proposer-v1"),
-      approvalDecision("reviewer-v1"),
+      warAtlasApprovalDecision("proposer-v1"),
+      warAtlasApprovalDecision("reviewer-v1"),
     );
     await db.exec(`
       create function public.reject_test_ranking_job() returns trigger
@@ -626,6 +869,7 @@ test("rolls back every canonical mutation and audit row when the final enqueue f
     assert.deepEqual((await db.query(`
       select
         (select count(*)::integer from public.engagements) as engagements,
+        (select count(*)::integer from public.commanders) as commanders,
         (select count(*)::integer from public.engagement_sides) as sides,
         (select count(*)::integer from public.participations) as participations,
         (select count(*)::integer from public.claims) as claims,
@@ -635,6 +879,7 @@ test("rolls back every canonical mutation and audit row when the final enqueue f
         (select status from public.curation_cases where id = $1) as case_status
     `, [caseId])).rows, [{
       engagements: 0,
+      commanders: 0,
       sides: 0,
       participations: 0,
       claims: 0,
@@ -1268,6 +1513,77 @@ test("publication and reversal functions expose only their intended roles", asyn
       assert.equal((await db.query("select has_function_privilege($1, $2, 'EXECUTE') as allowed", [role, ownerActionSignature])).rows[0].allowed, role === "authenticated");
       assert.equal((await db.query("select has_function_privilege($1, $2, 'EXECUTE') as allowed", [role, ownerPublishSignature])).rows[0].allowed, false);
     }
+  } finally {
+    await db.close();
+  }
+});
+
+test("an owner approval uses the same War Atlas commander bootstrap", async () => {
+  const db = await migratedDatabase();
+  try {
+    await db.exec(`insert into public.curator_memberships (user_id, role) values ('${ownerId}', 'owner');`);
+    const caseId = await insertLeasedCase(db, {
+      caseKey: "owner-publish-waterloo-with-imported-commanders",
+      entityType: "battle",
+      payload: {
+        date_iso: "1815-06-18",
+        commanders: [
+          {
+            slug: "napoleon_bonaparte",
+            name: "Napoleon Bonaparte",
+            side: "France",
+            rank: "Emperor",
+          },
+          {
+            slug: "arthur_wellesley",
+            name: "Arthur Wellesley",
+            side: "Coalition",
+            rank: "Field Marshal",
+          },
+        ],
+      },
+    });
+    await insertReviews(db, caseId, approvalDecision("proposer-v1"), approvalDecision("reviewer-v1"));
+    await db.query(
+      "update public.curation_cases set status = 'awaiting_human', lease_owner = null, lease_expires_at = null where id = $1",
+      [caseId],
+    );
+    const mutation = warAtlasApprovalDecision("human-v1").canonicalMutation;
+
+    await db.exec(`select set_config('request.jwt.claim.sub', '${ownerId}', false); set role authenticated;`);
+    await db.query(
+      "select * from public.owner_curation_action($1, 'approve_corrected', $2::jsonb, $3)",
+      [caseId, JSON.stringify({ mutation }), "La fuente confirma los comandantes importados."],
+    );
+    await db.exec("reset role");
+
+    assert.deepEqual((await db.query(`
+      select slug, display_name, publication_status
+      from public.commanders
+      order by slug
+    `)).rows, [
+      {
+        slug: "arthur-wellesley",
+        display_name: "Arthur Wellesley",
+        publication_status: "published",
+      },
+      {
+        slug: "napoleon-bonaparte",
+        display_name: "Napoleon Bonaparte",
+        publication_status: "published",
+      },
+    ]);
+    assert.deepEqual((await db.query(`
+      select actor_type,
+        jsonb_array_length(before_state->'commanders') as before_commanders,
+        jsonb_array_length(after_state->'commanders') as after_commanders
+      from public.editorial_events
+      where case_id = $1
+    `, [caseId])).rows, [{
+      actor_type: "human",
+      before_commanders: 0,
+      after_commanders: 2,
+    }]);
   } finally {
     await db.close();
   }

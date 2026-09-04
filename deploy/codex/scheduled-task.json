@@ -1,0 +1,12 @@
+{
+  "schemaVersion": 1,
+  "title": "Curar Bellumetrics",
+  "promptFile": "worker/curation/prompts/scheduled-task-v1.md",
+  "schedule": "BEGIN:VEVENT\nRRULE:FREQ=HOURLY\nEND:VEVENT",
+  "timingMode": "exact_schedule",
+  "defaultTimezone": "Atlantic/Canary",
+  "requiredConnectors": ["github", "supabase"],
+  "limits": {
+    "casesPerRun": 1
+  }
+}

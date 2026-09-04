@@ -1,10 +1,16 @@
 # Autonomous AI curation acceptance
 
-Execution date: 2026-08-29 UTC  
-Implementation commit: `9bd7762f241b5a80effeaa1e1b48acf52ec56187`  
-Branch: `agent/ai-curation-implementation`  
-Base: `origin/main` at `f15d4b54b295dea135ee45113557ffa77c19b7ad`  
-Overall result: **BLOCKED — database deployment is verified, but production acceptance is incomplete**
+Execution date: 2026-08-29 UTC
+
+Implementation commit: `9bd7762f241b5a80effeaa1e1b48acf52ec56187`
+
+Branch: `agent/ai-curation-implementation`
+
+Base: `origin/main` at `f15d4b54b295dea135ee45113557ffa77c19b7ad`
+
+Status refreshed: 2026-09-04 UTC
+
+Overall result: **BLOCKED — database and web deployment are available, but the one-case scheduled-task acceptance is incomplete**
 
 This record deliberately contains no credentials, session values, magic-link
 codes, user UUIDs, environment-file contents, or worker payloads.
@@ -17,8 +23,9 @@ codes, user UUIDs, environment-file contents, or worker payloads.
 | GitHub Pages kept active | PASS | `https://alexx-ftw.github.io/bellumetrics/` returned HTTP 200 and title `Bellumetrics` on 2026-08-29 UTC. No workflow or Pages configuration was removed. |
 | Supabase project | PASS | Project `dggbwsgoddbrxvojjojy` progressed from `RESTORING` to `ACTIVE_HEALTHY` in `eu-west-2`. |
 | Supabase CLI | BLOCKED | Pinned CLI `supabase@2.101.0` still reports that no access token is provided. Migration application and listing therefore used the authenticated Supabase connector. |
-| Vercel | BLOCKED | Vercel CLI 59.10.0 still reports `Logged out`; there is no authenticated Vercel connector/session or linked project. |
-| Oracle worker host | BLOCKED | No Oracle connector, VM endpoint, SSH identity, or authenticated session is available. |
+| Vercel | PASS | The preview is deployed at `https://bellumetrics-curation-preview.vercel.app`; deployment was performed through the authorized GitHub/Vercel path rather than the logged-out local CLI. |
+| Native Codex scheduled task | PENDING | The checked manifest and durable prompt replace Oracle. Official operating policy requires one reliable manual run before the hourly schedule is created. |
+| Oracle worker host | NOT USED | Oracle/systemd remains a checked legacy fallback only and is no longer an acceptance dependency. |
 
 ## Migration evidence
 
@@ -65,7 +72,7 @@ Read-only production verification also observed:
 - a public `commanders` Data API request returned HTTP 200;
 - anonymous requests to `curation_cases` and `curator_memberships` returned
   HTTP 401 / Postgres `42501` permission denied;
-- `auth.users` count is 0 and `curator_memberships` count is 0;
+- `auth.users` count is 1 and `curator_memberships` count is 1 in the 2026-09-04 production refresh;
 - one import run and 10,656 import records exist, while curation case count is 0.
 
 The local PGlite schema suite passes 10/10, including explicit GRANTs, RLS,
@@ -79,25 +86,25 @@ database/Docker socket is available.
 | Criterion | Result | Production evidence |
 | --- | --- | --- |
 | Import a staged battle twice and retain one pending case | BLOCKED | Existing import data is present, but there are 0 curation cases. Re-enqueueing requires the service-role importer or authenticated workflow on code containing the curation migrations. |
-| Store two independent fresh Codex reviews | BLOCKED | Requires Oracle worker access and interactive Codex device login. Local worker tests verify two fresh isolated threads and persistence-before-consensus. |
+| Store two independent fresh Codex reviews | BLOCKED | Requires the first manual `scheduled-task-v1` run. Local worker tests verify two fresh isolated threads and persistence-before-consensus. |
 | Compatible agreement publishes canonical rows once | BLOCKED | Requires a live worker and staged curation case. Local transactional publication/idempotency tests pass. |
 | One ranking job creates one `elo-v1` snapshot | BLOCKED | Requires live worker execution. Local atomic completion and unique-snapshot tests pass. |
-| Disagreement appears as `awaiting_human` in the panel | BLOCKED | Requires live worker, owner Auth user, membership, and Vercel deployment. |
-| Restart during a lease recovers without duplication | BLOCKED | Requires the Oracle systemd service. Local expired-lease reclaim and stored-review resume tests pass. |
+| Disagreement appears as `awaiting_human` in the panel | BLOCKED | Owner Auth, membership, and Vercel are present; a manual scheduled-task disagreement fixture still needs to be executed. |
+| Interrupted run during a lease recovers without duplication | BLOCKED | Requires interrupting the manual acceptance run and reclaiming it with the next run. Local expired-lease reclaim and stored-review resume tests pass. |
 | Publish a merge, revert it, and restore all relationships and sources | BLOCKED | Requires owner authentication and production scenario data. Local transactional merge/reversal tests pass. |
-| Credential search across repository, logs, browser bundle, and artifacts | PARTIAL | Local boundary-aware scans are rerun in final verification. Supabase advisor/query output contains no credentials; Vercel/Oracle logs remain inaccessible. |
+| Credential search across repository, logs, browser bundle, and artifacts | PARTIAL | Local boundary-aware scans and the GitHub Actions account-auth prohibition pass. The first Scheduled run report remains to be inspected. |
 
 ## Authentication and deployment checks
 
 | Check | Result | Notes |
 | --- | --- | --- |
-| Owner signs in and is added to `curator_memberships` | BLOCKED | Production has 0 Auth users. No UUID was fabricated or recorded. |
-| A second authenticated account cannot read curation data | BLOCKED | Production has no Auth accounts. Anonymous denial is verified; the local second-user RLS test passes. |
-| Public Vercel routes | BLOCKED | Vercel CLI is logged out and no deployment URL exists. |
-| Login and callback | BLOCKED | Requires Vercel deployment and an owner sign-in. |
-| Owner-only `/curation` and server rendering | BLOCKED | Local build/tests cover dynamic auth routes; live authorization cannot be exercised. |
+| Owner signs in and is added to `curator_memberships` | PASS | Production refresh reports one Auth user and one owner membership. No UUID or session value is recorded here. |
+| A second authenticated account cannot read curation data | BLOCKED | Only the owner account exists. Anonymous denial is verified; the local second-user RLS test passes. |
+| Public Vercel routes | PASS | Preview deployment URL is available; final route capture remains part of the end-to-end evidence. |
+| Login and callback | PASS | The owner completed the deployed magic-link callback before the 2026-09-04 refresh. No link token or session is retained. |
+| Owner-only `/curation` and server rendering | PARTIAL | Owner login is available and local build/tests cover dynamic auth routes; a second live account denial still needs verification. |
 | Mobile layout | BLOCKED | Local UI tests cover mobile-safe markup; no live Vercel viewport is available. |
-| Oracle service active with no inbound listener | BLOCKED | Target host access is unavailable. |
+| Native task uses only connected tools and versioned RPCs | BLOCKED | Manifest and prompt are checked locally; the required manual run has not yet been recorded. |
 
 ## Verification commands
 
@@ -113,26 +120,27 @@ database/Docker socket is available.
 | `npm run lint` | PASS (exit 0); one preexisting unused-variable warning in `tests/war-atlas-import.test.mjs:270`. |
 | `npm run test:db` | PASS — 10 passed, 0 failed. |
 | `npm run test:curation` | PASS — 119 passed, 0 failed. |
+| `node --test tests/curation-scheduled-task.test.mjs` | PASS: 3 passed, 0 failed; hourly manifest, fail-closed prompt, and GitHub account-auth boundary verified. |
 | `npm test` | PASS — server-capable build completed and 6 rendered HTML tests passed. |
 | `git diff --check` | PASS — no whitespace errors. |
 | Boundary-aware tracked/artifact credential scan | PASS — no GitHub, OpenAI, Supabase secret-key, or JWT token patterns found. |
 
 ## Required continuation
 
-1. Sign in once through Supabase Auth as the intended owner, provide that exact
-   account for membership insertion, and provide a distinct authenticated test
-   account for the production RLS denial check.
-2. Provide an authenticated Vercel account/team context, configure the project
-   and redirect allow-list, deploy, and verify routes, SSR, auth, and mobile UI.
-3. Provide authenticated Oracle/SSH access to the intended x86_64 Always Free
-   VM so the owner can complete Codex device login, start the service, and verify
-   firewall/listener state.
-4. Provide an authenticated service-role importer/CI execution path to enqueue
+1. Use a distinct authenticated test account for the production RLS denial
+   check; do not alter the existing owner membership.
+2. Capture final Vercel route, server-rendering, authorization, and mobile
+   checks while keeping GitHub Pages healthy.
+3. Run `scheduled-task-v1` manually with the connected GitHub and Supabase
+   tools. After that run is reliable, create the hourly task from
+   `deploy/codex/scheduled-task.json` and inspect its first runs.
+4. Use the authenticated importer/connector path to enqueue
    one staged battle after the curation schema deployment, then execute the full
    production scenario.
 5. Provide either an authenticated linked Supabase CLI or a running local stack
    to run the required pgTAP command.
 
-No owner membership, Vercel deployment, Oracle service start, production
-curation mutation, commit, push, or pull request was performed. Opening a PR
-with the production scenario unexecuted would misrepresent acceptance.
+No Oracle host is required or planned. As of this refresh, no native scheduled
+task, production curation mutation, commit, push, or pull request was performed.
+Opening a PR with the production scenario unexecuted would misrepresent
+acceptance.
