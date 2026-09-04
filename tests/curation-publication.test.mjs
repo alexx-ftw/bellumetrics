@@ -27,7 +27,7 @@ const ownerPublicationMigrationUrl = new URL(
   import.meta.url,
 );
 const commanderBootstrapMigrationUrl = new URL(
-  "../supabase/migrations/20260904173741_bootstrap_war_atlas_commanders.sql",
+  "../supabase/migrations/20260904175447_bootstrap_war_atlas_commanders.sql",
   import.meta.url,
 );
 
