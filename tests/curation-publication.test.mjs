@@ -54,6 +54,7 @@ async function migratedDatabase() {
   await db.exec(await readFile(ownerPublicationMigrationUrl, "utf8"));
   await db.exec(await readFile(commanderBootstrapMigrationUrl, "utf8"));
   await db.exec(await readFile(new URL("../supabase/migrations/20260905120000_reviewed_participants.sql", import.meta.url), "utf8"));
+  await db.exec(await readFile(new URL("../supabase/migrations/20260905133000_partial_participants.sql", import.meta.url), "utf8"));
   return db;
 }
 
@@ -1906,6 +1907,33 @@ test("participant enrichment rejects unknown identities, overwritten originals a
       assert.deepEqual((await db.query("select payload from public.curation_cases where id=$1",[id])).rows[0].payload,payload);
     }
   } finally { await db.close(); }
+});
+
+test("partial enrichment appends a verified opponent and preserves originals through publication and reversal", async () => {
+  const db=await migratedDatabase();
+  try {
+    const run=(await db.query(`insert into public.import_runs(source_dataset,source_version,source_url,license_name,attribution,status) values ('the-war-atlas','war-atlas-2026-08-24','https://example.test','test','test','staged') returning id`)).rows[0].id;
+    await db.query("insert into public.import_records(import_run_id,entity_type,external_id,checksum,payload) values ($1,'commander','arthur_wellesley',$2,$3)",[run,"0".repeat(64),JSON.stringify({name:"Arthur Wellesley"})]);
+    const payload={commanders:[{slug:"napoleon_bonaparte",name:"Napoleon Bonaparte",side:"France",rank:"Original rank"}]};
+    const id=await insertLeasedCase(db,{caseKey:"partial-import",entityType:"battle",payload});
+    const p=warAtlasApprovalDecision("proposer-v1"),r=warAtlasApprovalDecision("reviewer-v1");
+    p.canonicalMutation.participants=p.canonicalMutation.commanderRefs.map((ref,i)=>({ref,side:i?"Coalition":"France"}));
+    r.canonicalMutation=structuredClone(p.canonicalMutation);
+    const effective=(await db.query("select curation_private.effective_battle_commanders($1,$2,$3) as value",[JSON.stringify(payload),JSON.stringify(p.canonicalMutation),"war-atlas-2026-08-24"])).rows[0].value;
+    assert.deepEqual(effective[0],payload.commanders[0]);
+    const changed=structuredClone(p.canonicalMutation);changed.participants[0].side="Other";
+    assert.equal((await db.query("select curation_private.valid_participant_extension($1,$2) as ok",[JSON.stringify(payload),JSON.stringify(changed)])).rows[0].ok,false);
+    const unknown=structuredClone(p.canonicalMutation);unknown.commanderRefs[1].id="war-atlas:missing";unknown.participants[1].ref.id="war-atlas:missing";
+    await assert.rejects(db.query("select curation_private.effective_battle_commanders($1,$2,$3)",[JSON.stringify(payload),JSON.stringify(unknown),"war-atlas-2026-08-24"]));
+    await insertReviews(db,id,p,r);
+    const result=await publish(db,id);
+    assert.deepEqual((await db.query("select payload from public.curation_cases where id=$1",[id])).rows[0].payload,payload);
+    assert.equal((await db.query("select count(*)::int n from public.participations")).rows[0].n,2);
+    await db.query("insert into public.curator_memberships(user_id,role) values ($1,'owner')",[ownerId]);
+    await db.query("select set_config('request.jwt.claim.sub',$1,false)",[ownerId]);
+    await db.query("select public.revert_editorial_event($1,$2,$3)",[result.event_id,ownerId,"undo partial enrichment"]);
+    assert.equal((await db.query("select count(*)::int n from public.participations")).rows[0].n,0);
+  } finally {await db.close();}
 });
 
 test("enrichment bootstraps verified imported identities, preserving audit and denying stale leases", async () => {

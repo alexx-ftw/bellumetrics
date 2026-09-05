@@ -2,6 +2,18 @@ import test from "node:test";
 import assert from "node:assert/strict";
 import {parseAgentDecisionForCase} from "../lib/curation/contracts.mjs";
 
+test("partial enrichment preserves the original prefix and appends only opponents",()=>{
+  const partial={...original,payload:{...original.payload,commanders:[original.payload.commanders[0]]}};
+  const d=approval();
+  d.canonicalMutation.participants=d.canonicalMutation.commanderRefs.map((ref,i)=>({ref,side:i?"B":"A"}));
+  assert.equal(parseAgentDecisionForCase(d,partial).action,"approve_battle");
+  const changed=structuredClone(d);changed.canonicalMutation.participants[0].side="C";
+  assert.throws(()=>parseAgentDecisionForCase(changed,partial),/overwrite/);
+  const reordered=structuredClone(d);
+  reordered.canonicalMutation.participants.reverse();reordered.canonicalMutation.commanderRefs.reverse();
+  assert.throws(()=>parseAgentDecisionForCase(reordered,partial),/overwrite/);
+});
+
 const original = {source_revision:"v1",payload:{slug:"example_b",commanders:[
   {slug:"first_person",side:"A"},{slug:"second_person",side:"B"}
 ]}};
