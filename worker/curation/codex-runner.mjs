@@ -647,7 +647,7 @@ const EVIDENCE_SCHEMA = {
 const APPROVAL_MUTATION_SCHEMA = {
   type: "object",
   additionalProperties: false,
-  required: ["action", "battle", "commanderRefs"],
+  required: ["action", "battle", "commanderRefs", "participants"],
   properties: {
     action: { type: "string", enum: ["approve_battle"] },
     battle: {
@@ -677,6 +677,15 @@ const APPROVAL_MUTATION_SCHEMA = {
           ],
         },
       },
+    },
+    participants: {
+      anyOf: [
+        { type: "null" },
+        { type: "array", minItems: 2, items: {
+          type: "object", additionalProperties: false, required: ["ref", "side"],
+          properties: { ref: ENTITY_REFERENCE_SCHEMAS.commander, side: { type: "string", minLength: 1 } },
+        } },
+      ],
     },
     commanderRefs: {
       type: "array",

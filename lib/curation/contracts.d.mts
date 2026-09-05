@@ -34,6 +34,7 @@ export interface ApproveBattleMutation {
     readonly outcome?: "victory" | "defeat" | "draw" | "inconclusive" | "disputed" | "unknown";
   };
   readonly commanderRefs: readonly CommanderReference[];
+  readonly participants?: readonly { readonly ref: CommanderReference; readonly side: string }[];
 }
 
 export interface MergeCommandersMutation {

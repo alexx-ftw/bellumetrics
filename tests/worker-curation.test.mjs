@@ -771,7 +771,7 @@ test("Codex output schema and prompts cover every exact decision mutation shape"
     const [approval, nullMutation, merge, separation] = mutationVariants;
     assert.deepEqual(
       Object.keys(approval.properties),
-      ["action", "battle", "commanderRefs"],
+      ["action", "battle", "participants", "commanderRefs"],
     );
     assert.equal(approval.additionalProperties, false);
     assert.equal(

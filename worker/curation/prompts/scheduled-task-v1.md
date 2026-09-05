@@ -72,3 +72,11 @@ Devuelve solo el ref de GitHub usado, IDs no sensibles, estados finales y el
 resultado de cada comprobación. No incluyas datos históricos completos,
 razonamientos privados, secretos ni contenido de sesión. Si no había trabajo,
 indica `idle`.
+
+## Participantes ausentes y equivalencia de formato
+
+Usa únicamente el contrato y el publicador compatibles con participants. Antes de arrendar, verifica mediante lectura que existe curation_private.effective_battle_commanders(jsonb,jsonb,text); si falta la migración, termina sin mutaciones.
+
+Si commanders está vacío, proporciona a ambos agentes las mismas identidades candidatas obtenidas mediante lecturas de commanders o import_records de tipo commander, unidas a import_runs staged de the-war-atlas de la misma source_revision. Los agentes pueden solicitar búsquedas de candidatos por nombre; responde con lecturas de esas tablas, sin mostrar ninguna decisión del otro rol. Ninguna identidad se inventa: el publicador exige referencias canónicas existentes o registros importados verificables. Los agentes investigan fuentes para demostrar mando y pertenencia a cada bando. Ordenan la propuesta por ref.id e interpretan outcome desde el primer bando distinto de esa propuesta. Si commanders no está vacío, mantienen sus reglas originales y no proponen reemplazos.
+
+Ejecuta parseAgentDecision y persiste su resultado normalizado, nunca el JSON crudo: el contrato unifica exclusivamente el sufijo de exportación de un mismo slug War Atlas. El consenso sigue comparando fechas, identidades, bandos y resultado sin aproximaciones. No sobrescribas revisiones existentes ni reencoles casos terminales; los casos ya escalados requieren una nueva revisión expresamente autorizada.

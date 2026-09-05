@@ -53,6 +53,7 @@ async function migratedDatabase() {
   await db.exec(await readFile(publicationMigrationUrl, "utf8"));
   await db.exec(await readFile(ownerPublicationMigrationUrl, "utf8"));
   await db.exec(await readFile(commanderBootstrapMigrationUrl, "utf8"));
+  await db.exec(await readFile(new URL("../supabase/migrations/20260905120000_reviewed_participants.sql", import.meta.url), "utf8"));
   return db;
 }
 
@@ -1863,4 +1864,69 @@ test("stored canonical consensus publishes the exact review ids that were evalua
     reviewerReviewId: 102,
     model: "gpt-5",
   }]);
+});
+
+test("reviewed participants publish without rewriting the original empty payload and can be reverted", async () => {
+  const db = await migratedDatabase();
+  try {
+    await seedBattleCommanders(db);
+    const payload = { commanders: [], source_slugs: [] };
+    const id = await insertLeasedCase(db, {caseKey:"enriched-empty",entityType:"battle",payload});
+    const p = approvalDecision("proposer-v1"), r = approvalDecision("reviewer-v1");
+    const participants = p.canonicalMutation.commanderRefs.map((ref,i)=>({ref,side:i?"Coalition":"France"}));
+    p.canonicalMutation.participants = participants;
+    r.canonicalMutation.participants = participants;
+    await insertReviews(db,id,p,r);
+    const result = await publish(db,id);
+    assert.ok(result.event_id);
+    assert.deepEqual((await db.query("select payload from public.curation_cases where id=$1",[id])).rows[0].payload,payload);
+    assert.equal((await db.query("select count(*)::int n from public.participations")).rows[0].n,2);
+    await db.query("insert into public.curator_memberships(user_id,role) values ($1,'owner')",[ownerId]);
+    await db.query("select set_config('request.jwt.claim.sub',$1,false)",[ownerId]);
+    await db.query("select public.revert_editorial_event($1,$2,$3)",[result.event_id,ownerId,"revert enriched battle"]);
+    assert.equal((await db.query("select count(*)::int n from public.participations")).rows[0].n,0);
+  } finally { await db.close(); }
+});
+
+test("participant enrichment rejects unknown identities, overwritten originals and mismatching reviews atomically", async () => {
+  const db = await migratedDatabase();
+  try {
+    await seedBattleCommanders(db);
+    for (const scenario of ["unknown","overwrite","disagreement"]) {
+      const payload = {commanders:scenario==="overwrite"?[{name:"Original",side:"France"}]:[]};
+      const id=await insertLeasedCase(db,{caseKey:scenario,entityType:"battle",payload});
+      const p=approvalDecision("proposer-v1"),r=approvalDecision("reviewer-v1");
+      if(scenario==="unknown") p.canonicalMutation.commanderRefs[0]={type:"commander",id:"wikidata:Q999999999"};
+      p.canonicalMutation.participants=p.canonicalMutation.commanderRefs.map((ref,i)=>({ref,side:i?"Coalition":"France"}));
+      r.canonicalMutation=structuredClone(p.canonicalMutation);
+      if(scenario==="disagreement") r.canonicalMutation.participants[0].side="Other";
+      await insertReviews(db,id,p,r);
+      await assert.rejects(publish(db,id));
+      assert.equal((await db.query("select count(*)::int n from public.editorial_events")).rows[0].n,0);
+      assert.deepEqual((await db.query("select payload from public.curation_cases where id=$1",[id])).rows[0].payload,payload);
+    }
+  } finally { await db.close(); }
+});
+
+test("enrichment bootstraps verified imported identities, preserving audit and denying stale leases", async () => {
+  const db=await migratedDatabase();
+  try {
+    const run=(await db.query(`insert into public.import_runs(source_dataset,source_version,source_url,license_name,attribution,status) values ('the-war-atlas','war-atlas-2026-08-24','https://example.test','test','test','staged') returning id`)).rows[0].id;
+    for(const [slug,name] of [["napoleon_bonaparte","Napoleon Bonaparte"],["arthur_wellesley","Arthur Wellesley"]]) {
+      await db.query("insert into public.import_records(import_run_id,entity_type,external_id,checksum,payload) values ($1,'commander',$2,$3,$4)",[run,slug,"0".repeat(64),JSON.stringify({slug,name})]);
+    }
+    const id=await insertLeasedCase(db,{caseKey:"enriched-imports",entityType:"battle",payload:{commanders:[]}});
+    const p=warAtlasApprovalDecision("proposer-v1"),r=warAtlasApprovalDecision("reviewer-v1");
+    p.canonicalMutation.participants=p.canonicalMutation.commanderRefs.map((ref,i)=>({ref,side:i?"Coalition":"France"}));
+    r.canonicalMutation=structuredClone(p.canonicalMutation);
+    await insertReviews(db,id,p,r);
+    await assert.rejects(publish(db,id,"wrong-worker"));
+    assert.equal((await db.query("select count(*)::int n from public.commanders")).rows[0].n,0);
+    const result=await publish(db,id);
+    assert.equal((await db.query("select count(*)::int n from public.commanders")).rows[0].n,2);
+    await db.query("insert into public.curator_memberships(user_id,role) values ($1,'owner')",[ownerId]);
+    await db.query("select set_config('request.jwt.claim.sub',$1,false)",[ownerId]);
+    await db.query("select public.revert_editorial_event($1,$2,$3)",[result.event_id,ownerId,"undo"]);
+    assert.equal((await db.query("select count(*)::int n from public.commanders")).rows[0].n,0);
+  }finally{await db.close();}
 });
