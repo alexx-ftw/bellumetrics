@@ -114,3 +114,18 @@ test("rejects free-form canonical mutations", async () => {
   mutation.sql = "update commanders set rating = 5000";
   assert.throws(() => assertCanonicalMutation(mutation), /unknown canonical mutation key/i);
 });
+
+test("rejects imported underscores in canonical slug without changing source identity", async () => {
+  const input = await fixture("agreement-proposal");
+  input.canonicalMutation.battle.ref.id = "war-atlas:gettysburg_b";
+  input.canonicalMutation.battle.slug = "gettysburg_b";
+  assert.throws(() => parseAgentDecision(input), /slug/i);
+  input.canonicalMutation.battle.slug = "gettysburg-b";
+  assert.equal(parseAgentDecision(input).canonicalMutation.battle.ref.id, "war-atlas:gettysburg_b");
+});
+
+test("rejects qualitative confidence without coercing the agent output", async () => {
+  const input = await fixture("agreement-proposal");
+  input.confidence = "high";
+  assert.throws(() => parseAgentDecision(input), /confidence/i);
+});

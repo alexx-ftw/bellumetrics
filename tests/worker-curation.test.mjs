@@ -818,9 +818,9 @@ test("isolation launcher exposes only per-run inputs and not the repository", as
     const researchDirectory = path.join(fixtureRoot, "research");
     const credentialDirectory = path.join(fixtureRoot, "credentials");
     const schemaPath = path.join(fixtureRoot, "schema.json");
+    await mkdir(credentialDirectory);
     await Promise.all([
       mkdir(researchDirectory),
-      mkdir(credentialDirectory),
       writeFile(fakeBwrap, "#!/bin/sh\nprintf '%s\\n' \"$@\"\n", "utf8"),
       writeFile(fakeCodex, "#!/bin/sh\nexit 99\n", "utf8"),
       writeFile(path.join(credentialDirectory, "auth.json"), "fake-auth-fixture\n", {
@@ -1025,9 +1025,9 @@ printf 'original=%s\ndescriptor=%s\nreplacement=%s\n' \
 [[ $descriptor_identity == "$original_identity" ]]
 [[ $descriptor_identity != "$replacement_identity" ]]
 `;
+    await mkdir(credentialDirectory);
     await Promise.all([
       mkdir(researchDirectory),
-      mkdir(credentialDirectory),
       writeFile(fakeBwrap, fakeBwrapSource, "utf8"),
       writeFile(fakeCodex, "#!/bin/sh\nexit 99\n", "utf8"),
       writeFile(path.join(credentialDirectory, "auth.json"), "fake-auth-fixture\n", {
