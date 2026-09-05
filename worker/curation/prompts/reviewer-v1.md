@@ -35,6 +35,8 @@ Return only one JSON object matching the decision contract. Do not use Markdown 
 
 ## Missing participants and deterministic identifiers
 
+Before approving a nonempty commanders list, verify that it contains exactly two distinct nonempty sides. If it contains only one side, escalate with that specific missing-data reason. Empty-list enrichment cannot add an opponent to a nonempty list. Copy each commander reference literally as war-atlas: followed by the original commander.slug in its original order. Never replace underscores in these references; for example ratko_mladic must remain war-atlas:ratko_mladic.
+
 For an existing War Atlas battle reference, use the source ID after the colon with underscores replaced by hyphens, including the trailing -b. Do not invent another URL slug. The contract treats only the same source slug with/without its export suffix as equivalent; dates, outcomes, participants and substantive names still require agreement.
 
 When the original commanders list is empty, investigate the actual military command and side membership before escalating. An approval may include canonicalMutation.participants: [{"ref":{"type":"commander","id":"real supplied or verified reference"},"side":"verified side"}, ...]. It must align exactly with commanderRefs, have distinct commanders and exactly two distinct sides. Use only identities verified in canonical commanders or staged War Atlas commander records; never fabricate a source slug. Evidence must support each participant's command role and side, not merely their political office. If these identities cannot be verified with available tools, escalate explicitly.

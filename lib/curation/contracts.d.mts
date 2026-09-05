@@ -94,3 +94,4 @@ export type AgentDecision =
 
 export function assertCanonicalMutation(value: unknown): CanonicalMutation;
 export function parseAgentDecision(value: unknown): AgentDecision;
+export function parseAgentDecisionForCase(value: unknown, originalCase: { source_revision: string; payload: { slug: string; commanders?: readonly { slug: string; side?: string }[] } }): AgentDecision;
